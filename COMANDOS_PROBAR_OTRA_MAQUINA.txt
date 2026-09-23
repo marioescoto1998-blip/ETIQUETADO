@@ -1,0 +1,60 @@
+====================================================================
+ COMANDOS - LLEVAR EL CODIGO Y PROBARLO EN OTRA MAQUINA
+ (Etiquetador Ficohsa - sin git/GitHub, copia directa de archivos)
+====================================================================
+
+--------------------------------------------------------------------
+1) QUE ARCHIVOS COPIAR
+--------------------------------------------------------------------
+De esta carpeta ("Etiquetado Confidencial"), copia SOLO estos dos
+archivos a una USB, correo, o la nube (no hace falta nada mas):
+
+  etiquetador_ficohsa_seguro.py
+  requirements.txt
+
+(requirements.txt ya tiene las versiones exactas de las librerias
+que probamos aqui, para que en la otra maquina se instale lo mismo
+y se comporte igual.)
+
+NO copies: __pycache__, settings.json, los .log, ni ningun .xlsx/
+.docx/.pdf real -- no hacen falta para correr el script.
+
+--------------------------------------------------------------------
+2) EN LA OTRA MAQUINA: INSTALAR Y CORRER
+--------------------------------------------------------------------
+Requisito: que esa maquina tenga Python instalado (3.9 o mas nuevo).
+Verificar con:
+
+  python --version
+
+Si no tiene Python, instalarlo primero desde python.org (marcar la
+casilla "Add Python to PATH" durante la instalacion).
+
+Ya con Python listo, parado en la carpeta donde copiaste los dos
+archivos, correr en PowerShell:
+
+  python -m venv venv
+  venv\Scripts\activate
+  pip install -r requirements.txt
+  python etiquetador_ficohsa_seguro.py
+
+Estos 4 comandos: crean un entorno aislado, instalan exactamente
+las mismas librerias que usamos aqui, y abren la app.
+
+--------------------------------------------------------------------
+3) PRUEBA RECOMENDADA (en ese orden)
+--------------------------------------------------------------------
+  1. Selecciona una carpeta de prueba pequeña (no la real todavia).
+  2. Corre en Modo Simulacion primero.
+  3. Revisa "Ver Log" y "Ver Reporte" para confirmar que abren bien.
+  4. Si todo se ve bien, prueba una corrida real pequeña y verifica
+     que aparezca la carpeta "FicohsaBackups" en el perfil de esa
+     maquina (C:\Users\<usuario>\FicohsaBackups) con los respaldos.
+
+--------------------------------------------------------------------
+4) SI ALGO FALLA AL INSTALAR O ABRIR
+--------------------------------------------------------------------
+Copia el mensaje de error completo de la consola (se ve porque
+corres "python etiquetador_ficohsa_seguro.py" directo, no el .exe
+compilado) y me lo compartes para revisarlo.
+====================================================================
