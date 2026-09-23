@@ -1,0 +1,106 @@
+====================================================================
+ MANUAL - COMO CREAR EL .EXE DEL ETIQUETADOR FICOHSA
+ (para usar en cualquier maquina con Python instalado)
+====================================================================
+
+--------------------------------------------------------------------
+0) REQUISITO
+--------------------------------------------------------------------
+Tener Python instalado (3.9 o mas nuevo). Verificar con:
+
+  python --version
+
+Si no aparece nada, instalar Python desde python.org y marcar la
+casilla "Add Python to PATH" durante la instalacion.
+
+--------------------------------------------------------------------
+1) CREAR UNA CARPETA DE TRABAJO PARA COMPILAR
+--------------------------------------------------------------------
+Importante: esta carpeta NO debe estar dentro de OneDrive (ni ninguna
+otra carpeta sincronizada) -- un entorno virtual genera miles de
+archivos pequeños y eso vuelve muy lento a OneDrive, ademas de que
+puede fallar la instalacion por bloqueos de sincronizacion.
+
+Ejemplo (ajustar el usuario):
+
+  mkdir C:\Users\<TU-USUARIO>\EtiquetadorBuild
+  cd C:\Users\<TU-USUARIO>\EtiquetadorBuild
+
+--------------------------------------------------------------------
+2) CREAR EL ENTORNO VIRTUAL E INSTALAR LIBRERIAS
+--------------------------------------------------------------------
+Correr en PowerShell, parado en la carpeta de compilacion:
+
+  python -m venv venv
+  venv\Scripts\pip.exe install customtkinter openpyxl python-docx pypdf python-pptx pyinstaller
+
+(O bien, si ya tienes el requirements.txt del script:
+  venv\Scripts\pip.exe install -r requirements.txt
+  venv\Scripts\pip.exe install pyinstaller
+ -- pyinstaller no va en requirements.txt porque ese archivo es
+ para CORRER la app, no para compilarla.)
+
+--------------------------------------------------------------------
+3) PROBAR EL SCRIPT ANTES DE COMPILAR (recomendado)
+--------------------------------------------------------------------
+Confirma que la app abre bien con este Python/librerias antes de
+gastar tiempo compilando:
+
+  venv\Scripts\python.exe "RUTA\AL\etiquetador_ficohsa_seguro.py"
+
+Si abre la ventana sin errores en consola, sigue al paso 4.
+
+--------------------------------------------------------------------
+4) COMPILAR VERSION DE PRUEBA (CON CONSOLA VISIBLE)
+--------------------------------------------------------------------
+Esta version muestra una consola negra detras de la app -- sirve
+para ver mensajes de error si algo falla durante las pruebas.
+
+  venv\Scripts\pyinstaller.exe --onefile --collect-all customtkinter --name EtiquetadorFicohsa --distpath ".\dist" --workpath ".\build" --specpath "." "RUTA\AL\etiquetador_ficohsa_seguro.py"
+
+El .exe queda en:  .\dist\EtiquetadorFicohsa.exe
+
+--collect-all customtkinter es OBLIGATORIO: sin esa bandera, el
+.exe compila sin error pero customtkinter no encuentra sus temas/
+assets y la app puede fallar o verse rota al abrirla.
+
+Prueba este .exe primero (doble clic). Si algo sale mal, el error
+aparece en la consola negra -- corrigelo en el .py y repite este
+paso.
+
+--------------------------------------------------------------------
+5) COMPILAR VERSION FINAL (SIN CONSOLA, PARA REPARTIR)
+--------------------------------------------------------------------
+Una vez que la version de prueba funciona bien, compila la version
+limpia (sin la ventana de consola) agregando --windowed:
+
+  venv\Scripts\pyinstaller.exe --onefile --windowed --collect-all customtkinter --name EtiquetadorFicohsa --distpath ".\dist" --workpath ".\build" --specpath "." "RUTA\AL\etiquetador_ficohsa_seguro.py"
+
+Esto SOBRESCRIBE el .exe anterior en .\dist con la version final.
+
+--------------------------------------------------------------------
+6) PROBAR EL .EXE FINAL
+--------------------------------------------------------------------
+Doble clic en .\dist\EtiquetadorFicohsa.exe
+
+Como ya no hay consola, si algo esta mal simplemente no va a abrir
+nada visible. Si eso pasa, vuelve a compilar con el comando del
+paso 4 (con consola) para ver el error real.
+
+--------------------------------------------------------------------
+7) DISTRIBUIR
+--------------------------------------------------------------------
+El archivo a compartir es solo:
+
+  .\dist\EtiquetadorFicohsa.exe
+
+Es autocontenido -- la maquina que lo reciba NO necesita tener
+Python ni las librerias instaladas. Solo copiarlo y darle doble
+clic.
+
+Nota: algunos antivirus corporativos marcan ejecutables de
+PyInstaller como sospechosos por falso positivo (por como se auto-
+extraen en memoria). Si eso pasa, avisa para compilar una version
+alternativa con --onedir en vez de --onefile (genera una carpeta
+en vez de un solo archivo, menos propensa a ese falso positivo).
+====================================================================
