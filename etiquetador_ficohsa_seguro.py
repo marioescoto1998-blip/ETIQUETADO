@@ -355,7 +355,8 @@ class DocumentTaggerAppSecure:
         self.root = root
         self.root.title("Etiquetador Ficohsa - Sistema Seguro")
         self.root.geometry("900x790")
-        self.root.resizable(False, False)
+        self.root.minsize(820, 600)
+        self.root.resizable(True, True)
 
         self.log_dir = Path.home() / ".ficohsa_tagger"
         self.security_log = SecurityLogger(self.log_dir)
@@ -589,50 +590,39 @@ class DocumentTaggerAppSecure:
         )
         self.stop_button.pack(side="left", padx=5)
 
-        ctk.CTkButton(
+        # Botones secundarios agrupados en un menú para no saturar la fila
+        # principal con 4 botones mas (Log, Respaldos, Purgar, Reporte).
+        self.more_options_label = "⚙️ Más opciones"
+        self._more_options_actions = {
+            "📜 Ver Log": self.open_log_file,
+            "🗄️ Ver Respaldos": self.open_backups_folder,
+            "🧹 Purgar Respaldos": self.purge_backups,
+            "📂 Ver Reporte": self.open_output_folder,
+        }
+        self.more_options_menu = ctk.CTkOptionMenu(
             button_frame,
-            text="📜 Ver Log",
-            command=self.open_log_file,
+            values=list(self._more_options_actions.keys()),
+            command=self._handle_more_options,
             font=("Segoe UI", 11),
             fg_color="#555555",
-            hover_color="#777777"
-        ).pack(side="left", padx=5)
-
-        self.backups_button = ctk.CTkButton(
-            button_frame,
-            text="🗄️ Ver Respaldos",
-            command=self.open_backups_folder,
-            font=("Segoe UI", 11),
-            fg_color="#555555",
-            hover_color="#777777"
+            button_color="#555555",
+            button_hover_color="#777777",
+            width=170
         )
-        self.backups_button.pack(side="left", padx=5)
-
-        self.purge_button = ctk.CTkButton(
-            button_frame,
-            text="🧹 Purgar Respaldos",
-            command=self.purge_backups,
-            font=("Segoe UI", 11),
-            fg_color="#8a4b00",
-            hover_color="#b35f00"
-        )
-        self.purge_button.pack(side="left", padx=5)
-
-        self.report_button = ctk.CTkButton(
-            button_frame,
-            text="📂 Ver Reporte",
-            command=self.open_output_folder,
-            font=("Segoe UI", 11),
-            fg_color="#555555",
-            hover_color="#777777"
-        )
-        self.report_button.pack(side="left", padx=5)
+        self.more_options_menu.set(self.more_options_label)
+        self.more_options_menu.pack(side="left", padx=5)
 
         # ========== LOG ==========
         ctk.CTkLabel(main_frame, text="📋 Actividad:", font=("Segoe UI", 12, "bold")).pack(anchor="w", pady=(10, 5))
 
         self.log_text = ctk.CTkTextbox(main_frame, height=200, fg_color="#0a0a0a", text_color="#00ff00", font=("Courier New", 9))
         self.log_text.pack(fill="both", expand=True, pady=5)
+
+    def _handle_more_options(self, choice: str):
+        action = self._more_options_actions.get(choice)
+        if action:
+            action()
+        self.more_options_menu.set(self.more_options_label)
 
     def log_ui(self, message: str, level: str = "INFO"):
         timestamp = datetime.now().strftime('%H:%M:%S')
@@ -842,6 +832,13 @@ class DocumentTaggerAppSecure:
                         desired_tags.add("Confidencial")
 
                     if desired_tags.issubset(existing_tags):
+                        # El archivo no se vuelve a tocar, pero si alguien borró
+                        # la carpeta de respaldos (a mano o con "Purgar"), esto
+                        # la reconstruye igual: sin esto, un archivo ya etiquetado
+                        # nunca vuelve a pasar por ensure_backup() y se queda sin
+                        # red de seguridad para siempre.
+                        if not sim_mode and make_backups:
+                            self.engine.ensure_backup(file_path)
                         self._skip(file_path, "Ya etiquetado con esta clasificación")
                         continue
 
