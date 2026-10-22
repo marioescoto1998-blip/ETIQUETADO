@@ -1,231 +1,325 @@
-<!DOCTYPE html>
-<html lang="es" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office">
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office" lang="es">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta name="x-apple-disable-message-reformatting">
-<title>Salud ATM</title>
-<!--[if mso]><style>table,td,div,p,span{font-family:Segoe UI,Arial,sans-serif !important;}</style><![endif]-->
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="x-apple-disable-message-reformatting" />
+<meta name="format-detection" content="telephone=no,date=no,address=no,email=no" />
+<title>Salud de ATMs - Auditor&iacute;a Continua</title>
+<!--[if gte mso 9]><xml><o:OfficeDocumentSettings><o:AllowPNG/><o:PixelsPerInch>96</o:PixelsPerInch></o:OfficeDocumentSettings></xml><![endif]-->
 </head>
-<body style="margin:0;padding:0;background:#EEF2F7;">
+<body style="margin:0;padding:0;background-color:#EEF1F6;" bgcolor="#EEF1F6">
 
-<!-- Texto de vista previa (lo que se lee en la bandeja antes de abrir) -->
-<div style="display:none;max-height:0;overflow:hidden;mso-hide:all;">$${Sresumen}$$</div>
+<!-- Preheader: texto de vista previa en la bandeja (oculto en el cuerpo) -->
+<span style="display:none;font-size:1px;line-height:1px;color:#EEF1F6;max-height:0;max-width:0;opacity:0;overflow:hidden;mso-hide:all;">$${Sestado_texto}$$ &middot; $${Sresumen}$$</span>
 
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#EEF2F7" style="background:#EEF2F7;">
-<tr><td align="center" style="padding:28px 12px;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#EEF1F6" style="background-color:#EEF1F6;">
+<tr>
+<td align="center" valign="top" style="padding:24px 0;">
 
-<table role="presentation" width="640" cellpadding="0" cellspacing="0" border="0" style="width:640px;max-width:640px;font-family:Segoe UI,Arial,sans-serif;">
+<!-- ===== CONTENEDOR 640px ===== -->
+<table role="presentation" width="640" cellpadding="0" cellspacing="0" border="0" bgcolor="#FFFFFF" style="width:640px;background-color:#FFFFFF;">
 
-  <!-- ENCABEZADO -->
+<!-- ===== ENCABEZADO ===== -->
+<tr>
+<td bgcolor="#0B2A5B" style="background-color:#0B2A5B;padding:22px 32px;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
   <tr>
-    <td style="padding:0 4px 14px 4px;">
+    <td valign="middle" style="font-family:Arial,Helvetica,sans-serif;">
+      <!--
+        LOGO OPCIONAL (desactivado). El diseño funciona igual sin él.
+        - Usar SOLO una URL pública oficial de Grupo Ficohsa, en formato PNG (Outlook de escritorio NO muestra SVG).
+        - Outlook bloquea imágenes externas por defecto: el texto alternativo debe bastar.
+        Para activarlo, mover esta línea fuera del comentario (y quitar el texto FICOHSA de abajo):
+        <img src="https://URL-PUBLICA-OFICIAL/logo-ficohsa-blanco.png" width="120" height="32" alt="Ficohsa" border="0" style="display:block;border:0;outline:none;text-decoration:none;height:32px;width:120px;" />
+      -->
+      <span style="font-family:Arial,Helvetica,sans-serif;font-size:22px;line-height:28px;letter-spacing:3px;color:#FFFFFF;font-weight:bold;">FICOHSA</span><br />
+      <span style="font-family:Arial,Helvetica,sans-serif;font-size:11px;line-height:16px;letter-spacing:1.5px;color:#9DB8E8;font-weight:bold;">AUDITOR&Iacute;A CONTINUA</span>
+    </td>
+    <td align="right" valign="middle" style="font-family:Arial,Helvetica,sans-serif;font-size:11px;line-height:16px;letter-spacing:1.5px;color:#9DB8E8;font-weight:bold;">
+      FECHA DE CORTE<br />
+      <span style="font-family:Arial,Helvetica,sans-serif;font-size:16px;line-height:24px;letter-spacing:0;color:#FFFFFF;">$${Sfecha_corte}$$</span>
+    </td>
+  </tr>
+  </table>
+</td>
+</tr>
+<!-- Franja con el color del estado general -->
+<tr>
+<td height="4" bgcolor="$${Sestado_color}$$" style="height:4px;background-color:$${Sestado_color}$$;font-size:1px;line-height:1px;mso-line-height-rule:exactly;">&nbsp;</td>
+</tr>
+
+<!-- ===== HERO: ESTADO GENERAL ===== -->
+<tr>
+<td bgcolor="#F5F8FD" style="background-color:#F5F8FD;padding:32px 32px 30px 32px;">
+  <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+  <tr>
+    <td bgcolor="$${Sestado_color}$$" style="background-color:$${Sestado_color}$$;padding:5px 12px;font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:16px;letter-spacing:1.5px;color:#FFFFFF;font-weight:bold;">&#9679; $${Sestado_texto}$$</td>
+  </tr>
+  </table>
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+  <tr>
+    <td style="padding-top:14px;font-family:Arial,Helvetica,sans-serif;font-size:28px;line-height:36px;color:#0B2A5B;font-weight:bold;">Salud de la red de ATMs</td>
+  </tr>
+  <tr>
+    <td style="padding-top:8px;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:23px;color:#3D4B60;">$${Sresumen}$$</td>
+  </tr>
+  </table>
+</td>
+</tr>
+
+<!-- ===== 1. CONCILIACIÓN (KPIs 2 x 2) ===== -->
+<tr>
+<td style="padding:30px 32px 4px 32px;font-family:Arial,Helvetica,sans-serif;">
+  <span style="font-family:Arial,Helvetica,sans-serif;font-size:11px;line-height:16px;letter-spacing:1.5px;color:#6B7280;font-weight:bold;">1 &middot; CONCILIACI&Oacute;N</span><br />
+  <span style="font-family:Arial,Helvetica,sans-serif;font-size:20px;line-height:28px;color:#0B2A5B;font-weight:bold;">Match transaccional y contable</span>
+</td>
+</tr>
+<tr>
+<td style="padding:12px 32px 0 32px;">
+  <table role="presentation" width="576" cellpadding="0" cellspacing="0" border="0" style="width:576px;">
+  <tr>
+    <!-- KPI: Universo -->
+    <td width="280" valign="top" style="width:280px;border:1px solid #DDE3EC;border-left:4px solid #0B2A5B;padding:16px 18px;">
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
-        <tr>
-          <td style="font-size:12px;letter-spacing:2px;color:#0A3D7A;font-weight:bold;">AUDITORÍA CONTINUA &nbsp;·&nbsp; RPA</td>
-          <td align="right" style="font-size:12px;color:#64748B;">Corte $${Sfecha_corte}$$</td>
-        </tr>
+      <tr><td style="font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:16px;color:#6B7280;">ATMs en el universo</td></tr>
+      <tr><td style="padding-top:4px;font-family:Arial,Helvetica,sans-serif;font-size:28px;line-height:34px;color:#0B2A5B;font-weight:bold;">$${Stotal_atm}$$</td></tr>
+      <tr><td style="padding-top:4px;font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:16px;color:#6B7280;">Procesados en el corte</td></tr>
+      </table>
+    </td>
+    <td width="16" style="width:16px;font-size:1px;line-height:1px;">&nbsp;</td>
+    <!-- KPI: Casos conciliados -->
+    <td width="280" valign="top" style="width:280px;border:1px solid #DDE3EC;border-left:4px solid #00A3E0;padding:16px 18px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+      <tr><td style="font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:16px;color:#6B7280;">Casos conciliados o en ventana normal</td></tr>
+      <tr><td style="padding-top:4px;font-family:Arial,Helvetica,sans-serif;font-size:28px;line-height:34px;color:#0B2A5B;font-weight:bold;">$${Spct_conciliacion}$$%</td></tr>
+      <tr><td style="padding-top:4px;font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:16px;color:#6B7280;">De $${Stotal_casos}$$ casos clasificados</td></tr>
       </table>
     </td>
   </tr>
-
-  <!-- HERO -->
+  <tr><td colspan="3" height="16" style="height:16px;font-size:1px;line-height:1px;">&nbsp;</td></tr>
   <tr>
-    <td bgcolor="#0B1F3A" style="background:#0B1F3A;padding:32px 32px 28px 32px;">
+    <!-- KPI: Match transaccional -->
+    <td width="280" valign="top" style="width:280px;border:1px solid #DDE3EC;border-left:4px solid #2F6FD0;padding:16px 18px;">
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
-        <tr>
-          <td>
-            <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
-              <td bgcolor="$${Sestado_color}$$" style="background:$${Sestado_color}$$;color:#FFFFFF;font-size:11px;font-weight:bold;letter-spacing:1px;padding:5px 12px;">&#9679; $${Sestado_texto}$$</td>
-            </tr></table>
-          </td>
-        </tr>
-        <tr>
-          <td style="padding-top:18px;font-size:30px;line-height:36px;color:#FFFFFF;font-weight:bold;">Salud de la red ATM</td>
-        </tr>
-        <tr>
-          <td style="padding-top:8px;font-size:15px;line-height:22px;color:#B8C7DC;">$${Sresumen}$$</td>
-        </tr>
-        <tr>
-          <td style="padding-top:24px;">
-            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
-              <tr>
-                <td width="33%" style="border-left:3px solid #1FA2E0;padding-left:12px;">
-                  <div style="font-size:30px;font-weight:bold;color:#FFFFFF;">$${Stotal_atm}$$</div>
-                  <div style="font-size:12px;color:#8FA3BF;">ATMs monitoreados</div>
-                </td>
-                <td width="33%" style="border-left:3px solid #22C55E;padding-left:12px;">
-                  <div style="font-size:30px;font-weight:bold;color:#FFFFFF;">$${Stx_pct}$$%</div>
-                  <div style="font-size:12px;color:#8FA3BF;">Match transaccional</div>
-                </td>
-                <td width="34%" style="border-left:3px solid #A78BFA;padding-left:12px;">
-                  <div style="font-size:30px;font-weight:bold;color:#FFFFFF;">$${Sct_pct}$$%</div>
-                  <div style="font-size:12px;color:#8FA3BF;">Match contable</div>
-                </td>
-              </tr>
-            </table>
-          </td>
-        </tr>
+      <tr><td style="font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:16px;color:#6B7280;">Match transaccional &middot; <span style="color:#9CA3AF;">Journal vs Switch</span></td></tr>
+      <tr><td style="padding-top:4px;font-family:Arial,Helvetica,sans-serif;font-size:28px;line-height:34px;color:#0B2A5B;font-weight:bold;">$${Spct_trx}$$%</td></tr>
+      <tr><td style="padding-top:4px;font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:16px;color:#6B7280;"><b style="color:#16A34A;">$${Smatch_trx}$$</b> con match &nbsp;&middot;&nbsp; <b style="color:#DC2626;">$${Ssin_match_trx}$$</b> sin match</td></tr>
+      </table>
+    </td>
+    <td width="16" style="width:16px;font-size:1px;line-height:1px;">&nbsp;</td>
+    <!-- KPI: Match contable -->
+    <td width="280" valign="top" style="width:280px;border:1px solid #DDE3EC;border-left:4px solid #2F6FD0;padding:16px 18px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+      <tr><td style="font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:16px;color:#6B7280;">Match contable &middot; <span style="color:#9CA3AF;">Switch vs T24</span></td></tr>
+      <tr><td style="padding-top:4px;font-family:Arial,Helvetica,sans-serif;font-size:28px;line-height:34px;color:#0B2A5B;font-weight:bold;">$${Spct_cont}$$%</td></tr>
+      <tr><td style="padding-top:4px;font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:16px;color:#6B7280;"><b style="color:#16A34A;">$${Smatch_cont}$$</b> con match &nbsp;&middot;&nbsp; <b style="color:#DC2626;">$${Ssin_match_cont}$$</b> sin match</td></tr>
       </table>
     </td>
   </tr>
+  </table>
+</td>
+</tr>
 
-  <!-- CUERPO BLANCO -->
+<!-- ===== 2. GLOSA ===== -->
+<tr>
+<td style="padding:36px 32px 4px 32px;font-family:Arial,Helvetica,sans-serif;">
+  <span style="font-family:Arial,Helvetica,sans-serif;font-size:11px;line-height:16px;letter-spacing:1.5px;color:#6B7280;font-weight:bold;">2 &middot; GLOSA</span><br />
+  <span style="font-family:Arial,Helvetica,sans-serif;font-size:20px;line-height:28px;color:#0B2A5B;font-weight:bold;">Clasificaci&oacute;n de $${Stotal_casos}$$ casos</span>
+</td>
+</tr>
+<tr>
+<td style="padding:12px 32px 0 32px;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border:1px solid #DDE3EC;">
+  <!-- Barra dinámica: KNIME genera solo los tramos con conteo > 0 (ver knime_expresiones.md) -->
   <tr>
-    <td bgcolor="#FFFFFF" style="background:#FFFFFF;padding:30px 32px 8px 32px;">
-
-      <!-- 01 CONCILIACIÓN -->
+    <td style="padding:18px 18px 6px 18px;">
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
-        <tr><td style="font-size:12px;letter-spacing:2px;color:#1FA2E0;font-weight:bold;padding-bottom:4px;">01 · CONCILIACIÓN</td></tr>
-        <tr><td style="font-size:20px;color:#0B1F3A;font-weight:bold;padding-bottom:16px;">Journal vs Switch vs T24</td></tr>
+      <tr>$${Sbarra_html}$$</tr>
       </table>
-
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
-        <tr>
-          <!-- Transaccional -->
-          <td width="49%" valign="top" bgcolor="#F5F8FC" style="background:#F5F8FC;padding:18px;border-top:4px solid #1FA2E0;">
-            <div style="font-size:13px;color:#475569;font-weight:bold;">Transaccional</div>
-            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:12px;">
-              <tr>
-                <td style="font-size:26px;font-weight:bold;color:#16A34A;">$${Stx_match}$$</td>
-                <td align="right" style="font-size:26px;font-weight:bold;color:#DC2626;">$${Stx_nomatch}$$</td>
-              </tr>
-              <tr>
-                <td style="font-size:12px;color:#64748B;">Con match</td>
-                <td align="right" style="font-size:12px;color:#64748B;">Sin match</td>
-              </tr>
-            </table>
-          </td>
-          <td width="2%" style="font-size:0;">&nbsp;</td>
-          <!-- Contable -->
-          <td width="49%" valign="top" bgcolor="#F5F8FC" style="background:#F5F8FC;padding:18px;border-top:4px solid #A78BFA;">
-            <div style="font-size:13px;color:#475569;font-weight:bold;">Contable</div>
-            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:12px;">
-              <tr>
-                <td style="font-size:26px;font-weight:bold;color:#16A34A;">$${Sct_match}$$</td>
-                <td align="right" style="font-size:26px;font-weight:bold;color:#DC2626;">$${Sct_nomatch}$$</td>
-              </tr>
-              <tr>
-                <td style="font-size:12px;color:#64748B;">Con match</td>
-                <td align="right" style="font-size:12px;color:#64748B;">Sin match</td>
-              </tr>
-            </table>
-          </td>
-        </tr>
-      </table>
-
-      <!-- 02 GLOSA -->
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:34px;">
-        <tr><td style="font-size:12px;letter-spacing:2px;color:#1FA2E0;font-weight:bold;padding-bottom:4px;">02 · GLOSA</td></tr>
-        <tr><td style="font-size:20px;color:#0B1F3A;font-weight:bold;padding-bottom:6px;">¿Cómo se explica cada caso?</td></tr>
-        <tr><td style="font-size:13px;color:#64748B;padding-bottom:16px;">Lo pendiente por corte se concilia normalmente al día siguiente. Solo lo que supera 48 h requiere indagación.</td></tr>
-      </table>
-
-      <!-- Barra apilada (anchos = % de cada categoría) -->
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
-        <tr>
-          <td width="$${Sp_exacto}$$%" bgcolor="#16A34A" height="14" style="background:#16A34A;font-size:0;line-height:0;">&nbsp;</td>
-          <td width="$${Sp_reverso}$$%" bgcolor="#14B8A6" height="14" style="background:#14B8A6;font-size:0;line-height:0;">&nbsp;</td>
-          <td width="$${Sp_pend_t24}$$%" bgcolor="#F59E0B" height="14" style="background:#F59E0B;font-size:0;line-height:0;">&nbsp;</td>
-          <td width="$${Sp_falt_switch}$$%" bgcolor="#FB923C" height="14" style="background:#FB923C;font-size:0;line-height:0;">&nbsp;</td>
-          <td width="$${Sp_investigar}$$%" bgcolor="#DC2626" height="14" style="background:#DC2626;font-size:0;line-height:0;">&nbsp;</td>
-        </tr>
-      </table>
-
-      <!-- Leyenda / detalle -->
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:14px;font-size:14px;">
-        <tr>
-          <td style="padding:10px 0;border-bottom:1px solid #E2E8F0;"><span style="color:#16A34A;font-size:16px;">&#9632;</span>&nbsp; Match exacto</td>
-          <td align="right" style="padding:10px 0;border-bottom:1px solid #E2E8F0;color:#0B1F3A;font-weight:bold;">$${Sg_exacto}$$</td>
-          <td align="right" width="70" style="padding:10px 0;border-bottom:1px solid #E2E8F0;color:#94A3B8;font-size:12px;">$${Sp_exacto}$$%</td>
-        </tr>
-        <tr>
-          <td style="padding:10px 0;border-bottom:1px solid #E2E8F0;"><span style="color:#14B8A6;font-size:16px;">&#9632;</span>&nbsp; Match con reverso en ATM</td>
-          <td align="right" style="padding:10px 0;border-bottom:1px solid #E2E8F0;color:#0B1F3A;font-weight:bold;">$${Sg_reverso}$$</td>
-          <td align="right" style="padding:10px 0;border-bottom:1px solid #E2E8F0;color:#94A3B8;font-size:12px;">$${Sp_reverso}$$%</td>
-        </tr>
-        <tr>
-          <td style="padding:10px 0;border-bottom:1px solid #E2E8F0;"><span style="color:#F59E0B;font-size:16px;">&#9632;</span>&nbsp; Pendiente en T24 <span style="color:#94A3B8;font-size:12px;">(corte temprano)</span></td>
-          <td align="right" style="padding:10px 0;border-bottom:1px solid #E2E8F0;color:#0B1F3A;font-weight:bold;">$${Sg_pend_t24}$$</td>
-          <td align="right" style="padding:10px 0;border-bottom:1px solid #E2E8F0;color:#94A3B8;font-size:12px;">$${Sp_pend_t24}$$%</td>
-        </tr>
-        <tr>
-          <td style="padding:10px 0;border-bottom:1px solid #E2E8F0;"><span style="color:#FB923C;font-size:16px;">&#9632;</span>&nbsp; Faltante en Switch <span style="color:#94A3B8;font-size:12px;">(corte)</span></td>
-          <td align="right" style="padding:10px 0;border-bottom:1px solid #E2E8F0;color:#0B1F3A;font-weight:bold;">$${Sg_falt_switch}$$</td>
-          <td align="right" style="padding:10px 0;border-bottom:1px solid #E2E8F0;color:#94A3B8;font-size:12px;">$${Sp_falt_switch}$$%</td>
-        </tr>
-        <tr>
-          <td bgcolor="#FEF2F2" style="background:#FEF2F2;padding:12px 8px;"><span style="color:#DC2626;font-size:16px;">&#9632;</span>&nbsp; <b style="color:#B91C1C;">Sin conciliar +48 h · investigar</b></td>
-          <td bgcolor="#FEF2F2" align="right" style="background:#FEF2F2;padding:12px 8px;color:#B91C1C;font-weight:bold;">$${Sg_investigar}$$</td>
-          <td bgcolor="#FEF2F2" align="right" style="background:#FEF2F2;padding:12px 8px;color:#B91C1C;font-size:12px;">$${Sp_investigar}$$%</td>
-        </tr>
-      </table>
-
-      <!-- 03 EVENTOS -->
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:34px;">
-        <tr><td style="font-size:12px;letter-spacing:2px;color:#1FA2E0;font-weight:bold;padding-bottom:4px;">03 · MONITOREO DE EVENTOS</td></tr>
-        <tr><td style="font-size:20px;color:#0B1F3A;font-weight:bold;padding-bottom:16px;">Estado operativo</td></tr>
-      </table>
-
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
-        <tr>
-          <td width="24%" align="center" bgcolor="#F0FDF4" style="background:#F0FDF4;padding:16px 4px;">
-            <div style="font-size:24px;font-weight:bold;color:#16A34A;">$${Sev_online}$$</div>
-            <div style="font-size:11px;color:#64748B;">En línea</div>
-          </td>
-          <td width="1%" style="font-size:0;">&nbsp;</td>
-          <td width="24%" align="center" bgcolor="#F8FAFC" style="background:#F8FAFC;padding:16px 4px;">
-            <div style="font-size:24px;font-weight:bold;color:#475569;">$${Sev_offline}$$</div>
-            <div style="font-size:11px;color:#64748B;">Fuera de línea</div>
-          </td>
-          <td width="1%" style="font-size:0;">&nbsp;</td>
-          <td width="24%" align="center" bgcolor="#FFFBEB" style="background:#FFFBEB;padding:16px 4px;">
-            <div style="font-size:24px;font-weight:bold;color:#D97706;">$${Sev_advertencias}$$</div>
-            <div style="font-size:11px;color:#64748B;">Advertencias</div>
-          </td>
-          <td width="1%" style="font-size:0;">&nbsp;</td>
-          <td width="25%" align="center" bgcolor="#FEF2F2" style="background:#FEF2F2;padding:16px 4px;">
-            <div style="font-size:24px;font-weight:bold;color:#DC2626;">$${Sev_criticos}$$</div>
-            <div style="font-size:11px;color:#64748B;">Críticos</div>
-          </td>
-        </tr>
-      </table>
-
-      <!-- Top eventos (filas generadas en KNIME) -->
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:16px;font-size:13px;">
-        <tr>
-          <td style="padding:8px 0;border-bottom:2px solid #0B1F3A;color:#64748B;font-size:11px;letter-spacing:1px;">ATM</td>
-          <td style="padding:8px 0;border-bottom:2px solid #0B1F3A;color:#64748B;font-size:11px;letter-spacing:1px;">EVENTO</td>
-          <td align="right" style="padding:8px 0;border-bottom:2px solid #0B1F3A;color:#64748B;font-size:11px;letter-spacing:1px;">SEVERIDAD</td>
-        </tr>
-        $${Sev_filas_html}$$
-      </table>
-
-      <!-- CTA -->
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:32px;">
-        <tr><td align="center">
-          <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
-            <td bgcolor="#0A3D7A" style="background:#0A3D7A;padding:15px 34px;">
-              <a href="$${Surl_dashboard}$$" target="_blank" style="color:#FFFFFF;text-decoration:none;font-size:15px;font-weight:bold;display:inline-block;">Abrir dashboard &rarr;</a>
-            </td>
-          </tr></table>
-        </td></tr>
-        <tr><td align="center" style="padding:12px 0 26px 0;font-size:12px;color:#94A3B8;">Requiere acceso a la red interna</td></tr>
-      </table>
-
     </td>
   </tr>
-
-  <!-- PIE -->
   <tr>
-    <td style="padding:20px 8px;font-size:11px;line-height:17px;color:#94A3B8;">
-      Ejecución: $${Shora_ejecucion}$$ &nbsp;·&nbsp; Flujo: $${Sflujo}$$ &nbsp;·&nbsp; Servidor: $${Sservidor}$$<br>
-      Mensaje automático generado por el RPA de Auditoría Continua. Uso interno y confidencial; no reenviar fuera de la organización.
+    <td style="padding:6px 18px 4px 18px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+      <!-- Match exacto -->
+      <tr>
+        <td width="24" valign="middle" style="width:24px;padding:10px 0;border-bottom:1px solid #EEF1F6;">
+          <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr><td width="10" height="10" bgcolor="#16A34A" style="width:10px;height:10px;background-color:#16A34A;font-size:1px;line-height:1px;mso-line-height-rule:exactly;">&nbsp;</td></tr></table>
+        </td>
+        <td style="padding:10px 0;border-bottom:1px solid #EEF1F6;font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:20px;color:#111827;font-weight:bold;">
+          Match exacto<br />
+          <span style="font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:16px;color:#6B7280;font-weight:normal;">Journal, Switch y T24 coinciden</span>
+        </td>
+        <td width="90" align="right" style="width:90px;padding:10px 0;border-bottom:1px solid #EEF1F6;font-family:Arial,Helvetica,sans-serif;font-size:16px;line-height:20px;color:#0B2A5B;font-weight:bold;">$${Sn_exacto}$$</td>
+        <td width="56" align="right" style="width:56px;padding:10px 0;border-bottom:1px solid #EEF1F6;font-family:Arial,Helvetica,sans-serif;font-size:13px;line-height:20px;color:#6B7280;">$${Sp_exacto}$$%</td>
+      </tr>
+      <!-- Match con reverso -->
+      <tr>
+        <td width="24" valign="middle" style="width:24px;padding:10px 0;border-bottom:1px solid #EEF1F6;">
+          <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr><td width="10" height="10" bgcolor="#14B8A6" style="width:10px;height:10px;background-color:#14B8A6;font-size:1px;line-height:1px;mso-line-height-rule:exactly;">&nbsp;</td></tr></table>
+        </td>
+        <td style="padding:10px 0;border-bottom:1px solid #EEF1F6;font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:20px;color:#111827;font-weight:bold;">
+          Match con reverso<br />
+          <span style="font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:16px;color:#6B7280;font-weight:normal;">Reverso aplicado dentro del ATM</span>
+        </td>
+        <td align="right" style="padding:10px 0;border-bottom:1px solid #EEF1F6;font-family:Arial,Helvetica,sans-serif;font-size:16px;line-height:20px;color:#0B2A5B;font-weight:bold;">$${Sn_reverso}$$</td>
+        <td align="right" style="padding:10px 0;border-bottom:1px solid #EEF1F6;font-family:Arial,Helvetica,sans-serif;font-size:13px;line-height:20px;color:#6B7280;">$${Sp_reverso}$$%</td>
+      </tr>
+      <!-- Pendiente en T24 -->
+      <tr>
+        <td width="24" valign="middle" style="width:24px;padding:10px 0;border-bottom:1px solid #EEF1F6;">
+          <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr><td width="10" height="10" bgcolor="#F59E0B" style="width:10px;height:10px;background-color:#F59E0B;font-size:1px;line-height:1px;mso-line-height-rule:exactly;">&nbsp;</td></tr></table>
+        </td>
+        <td style="padding:10px 0;border-bottom:1px solid #EEF1F6;font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:20px;color:#111827;font-weight:bold;">
+          Pendiente en T24<br />
+          <span style="font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:16px;color:#6B7280;font-weight:normal;">Corte de T24 m&aacute;s temprano &middot; se concilia al d&iacute;a siguiente</span>
+        </td>
+        <td align="right" style="padding:10px 0;border-bottom:1px solid #EEF1F6;font-family:Arial,Helvetica,sans-serif;font-size:16px;line-height:20px;color:#0B2A5B;font-weight:bold;">$${Sn_pend_t24}$$</td>
+        <td align="right" style="padding:10px 0;border-bottom:1px solid #EEF1F6;font-family:Arial,Helvetica,sans-serif;font-size:13px;line-height:20px;color:#6B7280;">$${Sp_pend_t24}$$%</td>
+      </tr>
+      <!-- Faltante en Switch -->
+      <tr>
+        <td width="24" valign="middle" style="width:24px;padding:10px 0;border-bottom:1px solid #EEF1F6;">
+          <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr><td width="10" height="10" bgcolor="#FB923C" style="width:10px;height:10px;background-color:#FB923C;font-size:1px;line-height:1px;mso-line-height-rule:exactly;">&nbsp;</td></tr></table>
+        </td>
+        <td style="padding:10px 0;border-bottom:1px solid #EEF1F6;font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:20px;color:#111827;font-weight:bold;">
+          Faltante en Switch<br />
+          <span style="font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:16px;color:#6B7280;font-weight:normal;">Trx despu&eacute;s de las 11 p.&nbsp;m. &middot; aparece en el siguiente corte</span>
+        </td>
+        <td align="right" style="padding:10px 0;border-bottom:1px solid #EEF1F6;font-family:Arial,Helvetica,sans-serif;font-size:16px;line-height:20px;color:#0B2A5B;font-weight:bold;">$${Sn_falt_switch}$$</td>
+        <td align="right" style="padding:10px 0;border-bottom:1px solid #EEF1F6;font-family:Arial,Helvetica,sans-serif;font-size:13px;line-height:20px;color:#6B7280;">$${Sp_falt_switch}$$%</td>
+      </tr>
+      </table>
     </td>
   </tr>
+  <!-- Sin conciliar > 48 h: la única alerta real -->
+  <tr>
+    <td bgcolor="#FEF2F2" style="background-color:#FEF2F2;border-top:1px solid #FECACA;padding:12px 18px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+      <tr>
+        <td width="24" valign="middle" style="width:24px;">
+          <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr><td width="10" height="10" bgcolor="#DC2626" style="width:10px;height:10px;background-color:#DC2626;font-size:1px;line-height:1px;mso-line-height-rule:exactly;">&nbsp;</td></tr></table>
+        </td>
+        <td style="font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:20px;color:#B91C1C;font-weight:bold;">
+          Sin conciliar m&aacute;s de 48 h<br />
+          <span style="font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:16px;color:#991B1B;font-weight:normal;">Requiere investigaci&oacute;n a nivel T24</span>
+        </td>
+        <td width="90" align="right" style="width:90px;font-family:Arial,Helvetica,sans-serif;font-size:18px;line-height:20px;color:#DC2626;font-weight:bold;">$${Sn_investigar}$$</td>
+        <td width="56" align="right" style="width:56px;font-family:Arial,Helvetica,sans-serif;font-size:13px;line-height:20px;color:#DC2626;">$${Sp_investigar}$$%</td>
+      </tr>
+      </table>
+    </td>
+  </tr>
+  </table>
+</td>
+</tr>
+<tr>
+<td style="padding:12px 32px 0 32px;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+  <tr>
+    <td bgcolor="#EAF7FD" style="background-color:#EAF7FD;border-left:4px solid #00A3E0;padding:12px 16px;font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:18px;color:#0B2A5B;">
+      Lo pendiente por corte (T24 y Switch) se concilia normalmente al d&iacute;a siguiente. <b>Solo los casos sin conciliar por m&aacute;s de 48 h son una alerta real.</b>
+    </td>
+  </tr>
+  </table>
+</td>
+</tr>
+
+<!-- ===== 3. MONITOREO DE EVENTOS ===== -->
+<tr>
+<td style="padding:36px 32px 4px 32px;font-family:Arial,Helvetica,sans-serif;">
+  <span style="font-family:Arial,Helvetica,sans-serif;font-size:11px;line-height:16px;letter-spacing:1.5px;color:#6B7280;font-weight:bold;">3 &middot; MONITOREO DE EVENTOS</span><br />
+  <span style="font-family:Arial,Helvetica,sans-serif;font-size:20px;line-height:28px;color:#0B2A5B;font-weight:bold;">Estado de la red</span>
+</td>
+</tr>
+<tr>
+<td style="padding:12px 32px 0 32px;">
+  <table role="presentation" width="576" cellpadding="0" cellspacing="0" border="0" style="width:576px;">
+  <tr>
+    <td width="132" valign="top" style="width:132px;border:1px solid #DDE3EC;border-top:4px solid #16A34A;padding:12px 14px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+      <tr><td style="font-family:Arial,Helvetica,sans-serif;font-size:11px;line-height:16px;letter-spacing:1px;color:#6B7280;font-weight:bold;">EN L&Iacute;NEA</td></tr>
+      <tr><td style="padding-top:4px;font-family:Arial,Helvetica,sans-serif;font-size:26px;line-height:32px;color:#16A34A;font-weight:bold;">$${Satm_en_linea}$$</td></tr>
+      </table>
+    </td>
+    <td width="16" style="width:16px;font-size:1px;line-height:1px;">&nbsp;</td>
+    <td width="132" valign="top" style="width:132px;border:1px solid #DDE3EC;border-top:4px solid #6B7280;padding:12px 14px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+      <tr><td style="font-family:Arial,Helvetica,sans-serif;font-size:11px;line-height:16px;letter-spacing:1px;color:#6B7280;font-weight:bold;">FUERA DE L&Iacute;NEA</td></tr>
+      <tr><td style="padding-top:4px;font-family:Arial,Helvetica,sans-serif;font-size:26px;line-height:32px;color:#374151;font-weight:bold;">$${Satm_fuera_linea}$$</td></tr>
+      </table>
+    </td>
+    <td width="16" style="width:16px;font-size:1px;line-height:1px;">&nbsp;</td>
+    <td width="132" valign="top" style="width:132px;border:1px solid #DDE3EC;border-top:4px solid #D97706;padding:12px 14px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+      <tr><td style="font-family:Arial,Helvetica,sans-serif;font-size:11px;line-height:16px;letter-spacing:1px;color:#6B7280;font-weight:bold;">ADVERTENCIAS</td></tr>
+      <tr><td style="padding-top:4px;font-family:Arial,Helvetica,sans-serif;font-size:26px;line-height:32px;color:#D97706;font-weight:bold;">$${Sadvertencias}$$</td></tr>
+      </table>
+    </td>
+    <td width="16" style="width:16px;font-size:1px;line-height:1px;">&nbsp;</td>
+    <td width="132" valign="top" style="width:132px;border:1px solid #DDE3EC;border-top:4px solid #DC2626;padding:12px 14px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+      <tr><td style="font-family:Arial,Helvetica,sans-serif;font-size:11px;line-height:16px;letter-spacing:1px;color:#6B7280;font-weight:bold;">CR&Iacute;TICOS</td></tr>
+      <tr><td style="padding-top:4px;font-family:Arial,Helvetica,sans-serif;font-size:26px;line-height:32px;color:#DC2626;font-weight:bold;">$${Scriticos}$$</td></tr>
+      </table>
+    </td>
+  </tr>
+  </table>
+</td>
+</tr>
+<tr>
+<td style="padding:20px 32px 6px 32px;font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:20px;color:#0B2A5B;font-weight:bold;">
+  Top eventos <span style="font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#6B7280;font-weight:normal;">(m&aacute;x. 10, ordenados por severidad)</span>
+</td>
+</tr>
+<tr>
+<td style="padding:0 32px 0 32px;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border:1px solid #DDE3EC;">
+  <tr>
+    <td width="130" bgcolor="#F5F8FD" style="width:130px;background-color:#F5F8FD;padding:8px 12px;border-bottom:1px solid #DDE3EC;font-family:Arial,Helvetica,sans-serif;font-size:11px;line-height:16px;letter-spacing:1px;color:#5B6B82;font-weight:bold;">ATM</td>
+    <td bgcolor="#F5F8FD" style="background-color:#F5F8FD;padding:8px 12px;border-bottom:1px solid #DDE3EC;font-family:Arial,Helvetica,sans-serif;font-size:11px;line-height:16px;letter-spacing:1px;color:#5B6B82;font-weight:bold;">EVENTO</td>
+    <td width="120" bgcolor="#F5F8FD" style="width:120px;background-color:#F5F8FD;padding:8px 12px;border-bottom:1px solid #DDE3EC;font-family:Arial,Helvetica,sans-serif;font-size:11px;line-height:16px;letter-spacing:1px;color:#5B6B82;font-weight:bold;">SEVERIDAD</td>
+  </tr>
+  $${Seventos_html}$$
+  </table>
+</td>
+</tr>
+
+<!-- ===== CTA: DASHBOARD (botón a prueba de Outlook) ===== -->
+<tr>
+<td align="center" style="padding:32px 32px 8px 32px;">
+  <!--[if mso]>
+  <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="$${Surl_dashboard}$$" style="height:48px;v-text-anchor:middle;width:280px;" arcsize="12%" stroke="f" fillcolor="#00A3E0">
+    <w:anchorlock/>
+    <center style="color:#FFFFFF;font-family:Arial,Helvetica,sans-serif;font-size:16px;font-weight:bold;">Ver detalle en el dashboard</center>
+  </v:roundrect>
+  <![endif]-->
+  <!--[if !mso]><!-- -->
+  <a href="$${Surl_dashboard}$$" target="_blank" style="display:inline-block;background-color:#00A3E0;color:#FFFFFF;font-family:Arial,Helvetica,sans-serif;font-size:16px;line-height:48px;font-weight:bold;text-decoration:none;text-align:center;width:280px;-webkit-text-size-adjust:none;">Ver detalle en el dashboard</a>
+  <!--<![endif]-->
+</td>
+</tr>
+<tr>
+<td align="center" style="padding:0 32px 32px 32px;font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:18px;color:#6B7280;">
+  Acceso solo desde la red interna de Ficohsa.
+</td>
+</tr>
+
+<!-- ===== PIE ===== -->
+<tr>
+<td bgcolor="#F5F8FD" style="background-color:#F5F8FD;border-top:1px solid #DDE3EC;padding:20px 32px;font-family:Arial,Helvetica,sans-serif;font-size:11px;line-height:17px;color:#6B7280;">
+  Generado autom&aacute;ticamente por el RPA de Auditor&iacute;a Continua el $${Sfecha_generacion}$$.<br />
+  Este correo contiene &uacute;nicamente informaci&oacute;n agregada; no incluye n&uacute;meros de tarjeta, cuentas ni datos de clientes.<br />
+  Clasificaci&oacute;n: <b style="color:#0B2A5B;">Uso interno</b>. No responder a este mensaje.
+</td>
+</tr>
 
 </table>
-</td></tr>
+<!-- ===== FIN CONTENEDOR ===== -->
+
+</td>
+</tr>
 </table>
 </body>
 </html>
