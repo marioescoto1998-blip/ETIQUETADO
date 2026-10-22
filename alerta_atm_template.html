@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="es" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="x-apple-disable-message-reformatting">
+<title>Salud ATM</title>
+<!--[if mso]><style>table,td,div,p,span{font-family:Segoe UI,Arial,sans-serif !important;}</style><![endif]-->
+</head>
+<body style="margin:0;padding:0;background:#EEF2F7;">
+
+<!-- Texto de vista previa (lo que se lee en la bandeja antes de abrir) -->
+<div style="display:none;max-height:0;overflow:hidden;mso-hide:all;">$${Sresumen}$$</div>
+
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#EEF2F7" style="background:#EEF2F7;">
+<tr><td align="center" style="padding:28px 12px;">
+
+<table role="presentation" width="640" cellpadding="0" cellspacing="0" border="0" style="width:640px;max-width:640px;font-family:Segoe UI,Arial,sans-serif;">
+
+  <!-- ENCABEZADO -->
+  <tr>
+    <td style="padding:0 4px 14px 4px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+        <tr>
+          <td style="font-size:12px;letter-spacing:2px;color:#0A3D7A;font-weight:bold;">AUDITORÍA CONTINUA &nbsp;·&nbsp; RPA</td>
+          <td align="right" style="font-size:12px;color:#64748B;">Corte $${Sfecha_corte}$$</td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+
+  <!-- HERO -->
+  <tr>
+    <td bgcolor="#0B1F3A" style="background:#0B1F3A;padding:32px 32px 28px 32px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+        <tr>
+          <td>
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
+              <td bgcolor="$${Sestado_color}$$" style="background:$${Sestado_color}$$;color:#FFFFFF;font-size:11px;font-weight:bold;letter-spacing:1px;padding:5px 12px;">&#9679; $${Sestado_texto}$$</td>
+            </tr></table>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding-top:18px;font-size:30px;line-height:36px;color:#FFFFFF;font-weight:bold;">Salud de la red ATM</td>
+        </tr>
+        <tr>
+          <td style="padding-top:8px;font-size:15px;line-height:22px;color:#B8C7DC;">$${Sresumen}$$</td>
+        </tr>
+        <tr>
+          <td style="padding-top:24px;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td width="33%" style="border-left:3px solid #1FA2E0;padding-left:12px;">
+                  <div style="font-size:30px;font-weight:bold;color:#FFFFFF;">$${Stotal_atm}$$</div>
+                  <div style="font-size:12px;color:#8FA3BF;">ATMs monitoreados</div>
+                </td>
+                <td width="33%" style="border-left:3px solid #22C55E;padding-left:12px;">
+                  <div style="font-size:30px;font-weight:bold;color:#FFFFFF;">$${Stx_pct}$$%</div>
+                  <div style="font-size:12px;color:#8FA3BF;">Match transaccional</div>
+                </td>
+                <td width="34%" style="border-left:3px solid #A78BFA;padding-left:12px;">
+                  <div style="font-size:30px;font-weight:bold;color:#FFFFFF;">$${Sct_pct}$$%</div>
+                  <div style="font-size:12px;color:#8FA3BF;">Match contable</div>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+
+  <!-- CUERPO BLANCO -->
+  <tr>
+    <td bgcolor="#FFFFFF" style="background:#FFFFFF;padding:30px 32px 8px 32px;">
+
+      <!-- 01 CONCILIACIÓN -->
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+        <tr><td style="font-size:12px;letter-spacing:2px;color:#1FA2E0;font-weight:bold;padding-bottom:4px;">01 · CONCILIACIÓN</td></tr>
+        <tr><td style="font-size:20px;color:#0B1F3A;font-weight:bold;padding-bottom:16px;">Journal vs Switch vs T24</td></tr>
+      </table>
+
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+        <tr>
+          <!-- Transaccional -->
+          <td width="49%" valign="top" bgcolor="#F5F8FC" style="background:#F5F8FC;padding:18px;border-top:4px solid #1FA2E0;">
+            <div style="font-size:13px;color:#475569;font-weight:bold;">Transaccional</div>
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:12px;">
+              <tr>
+                <td style="font-size:26px;font-weight:bold;color:#16A34A;">$${Stx_match}$$</td>
+                <td align="right" style="font-size:26px;font-weight:bold;color:#DC2626;">$${Stx_nomatch}$$</td>
+              </tr>
+              <tr>
+                <td style="font-size:12px;color:#64748B;">Con match</td>
+                <td align="right" style="font-size:12px;color:#64748B;">Sin match</td>
+              </tr>
+            </table>
+          </td>
+          <td width="2%" style="font-size:0;">&nbsp;</td>
+          <!-- Contable -->
+          <td width="49%" valign="top" bgcolor="#F5F8FC" style="background:#F5F8FC;padding:18px;border-top:4px solid #A78BFA;">
+            <div style="font-size:13px;color:#475569;font-weight:bold;">Contable</div>
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:12px;">
+              <tr>
+                <td style="font-size:26px;font-weight:bold;color:#16A34A;">$${Sct_match}$$</td>
+                <td align="right" style="font-size:26px;font-weight:bold;color:#DC2626;">$${Sct_nomatch}$$</td>
+              </tr>
+              <tr>
+                <td style="font-size:12px;color:#64748B;">Con match</td>
+                <td align="right" style="font-size:12px;color:#64748B;">Sin match</td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+      </table>
+
+      <!-- 02 GLOSA -->
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:34px;">
+        <tr><td style="font-size:12px;letter-spacing:2px;color:#1FA2E0;font-weight:bold;padding-bottom:4px;">02 · GLOSA</td></tr>
+        <tr><td style="font-size:20px;color:#0B1F3A;font-weight:bold;padding-bottom:6px;">¿Cómo se explica cada caso?</td></tr>
+        <tr><td style="font-size:13px;color:#64748B;padding-bottom:16px;">Lo pendiente por corte se concilia normalmente al día siguiente. Solo lo que supera 48 h requiere indagación.</td></tr>
+      </table>
+
+      <!-- Barra apilada (anchos = % de cada categoría) -->
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+        <tr>
+          <td width="$${Sp_exacto}$$%" bgcolor="#16A34A" height="14" style="background:#16A34A;font-size:0;line-height:0;">&nbsp;</td>
+          <td width="$${Sp_reverso}$$%" bgcolor="#14B8A6" height="14" style="background:#14B8A6;font-size:0;line-height:0;">&nbsp;</td>
+          <td width="$${Sp_pend_t24}$$%" bgcolor="#F59E0B" height="14" style="background:#F59E0B;font-size:0;line-height:0;">&nbsp;</td>
+          <td width="$${Sp_falt_switch}$$%" bgcolor="#FB923C" height="14" style="background:#FB923C;font-size:0;line-height:0;">&nbsp;</td>
+          <td width="$${Sp_investigar}$$%" bgcolor="#DC2626" height="14" style="background:#DC2626;font-size:0;line-height:0;">&nbsp;</td>
+        </tr>
+      </table>
+
+      <!-- Leyenda / detalle -->
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:14px;font-size:14px;">
+        <tr>
+          <td style="padding:10px 0;border-bottom:1px solid #E2E8F0;"><span style="color:#16A34A;font-size:16px;">&#9632;</span>&nbsp; Match exacto</td>
+          <td align="right" style="padding:10px 0;border-bottom:1px solid #E2E8F0;color:#0B1F3A;font-weight:bold;">$${Sg_exacto}$$</td>
+          <td align="right" width="70" style="padding:10px 0;border-bottom:1px solid #E2E8F0;color:#94A3B8;font-size:12px;">$${Sp_exacto}$$%</td>
+        </tr>
+        <tr>
+          <td style="padding:10px 0;border-bottom:1px solid #E2E8F0;"><span style="color:#14B8A6;font-size:16px;">&#9632;</span>&nbsp; Match con reverso en ATM</td>
+          <td align="right" style="padding:10px 0;border-bottom:1px solid #E2E8F0;color:#0B1F3A;font-weight:bold;">$${Sg_reverso}$$</td>
+          <td align="right" style="padding:10px 0;border-bottom:1px solid #E2E8F0;color:#94A3B8;font-size:12px;">$${Sp_reverso}$$%</td>
+        </tr>
+        <tr>
+          <td style="padding:10px 0;border-bottom:1px solid #E2E8F0;"><span style="color:#F59E0B;font-size:16px;">&#9632;</span>&nbsp; Pendiente en T24 <span style="color:#94A3B8;font-size:12px;">(corte temprano)</span></td>
+          <td align="right" style="padding:10px 0;border-bottom:1px solid #E2E8F0;color:#0B1F3A;font-weight:bold;">$${Sg_pend_t24}$$</td>
+          <td align="right" style="padding:10px 0;border-bottom:1px solid #E2E8F0;color:#94A3B8;font-size:12px;">$${Sp_pend_t24}$$%</td>
+        </tr>
+        <tr>
+          <td style="padding:10px 0;border-bottom:1px solid #E2E8F0;"><span style="color:#FB923C;font-size:16px;">&#9632;</span>&nbsp; Faltante en Switch <span style="color:#94A3B8;font-size:12px;">(corte)</span></td>
+          <td align="right" style="padding:10px 0;border-bottom:1px solid #E2E8F0;color:#0B1F3A;font-weight:bold;">$${Sg_falt_switch}$$</td>
+          <td align="right" style="padding:10px 0;border-bottom:1px solid #E2E8F0;color:#94A3B8;font-size:12px;">$${Sp_falt_switch}$$%</td>
+        </tr>
+        <tr>
+          <td bgcolor="#FEF2F2" style="background:#FEF2F2;padding:12px 8px;"><span style="color:#DC2626;font-size:16px;">&#9632;</span>&nbsp; <b style="color:#B91C1C;">Sin conciliar +48 h · investigar</b></td>
+          <td bgcolor="#FEF2F2" align="right" style="background:#FEF2F2;padding:12px 8px;color:#B91C1C;font-weight:bold;">$${Sg_investigar}$$</td>
+          <td bgcolor="#FEF2F2" align="right" style="background:#FEF2F2;padding:12px 8px;color:#B91C1C;font-size:12px;">$${Sp_investigar}$$%</td>
+        </tr>
+      </table>
+
+      <!-- 03 EVENTOS -->
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:34px;">
+        <tr><td style="font-size:12px;letter-spacing:2px;color:#1FA2E0;font-weight:bold;padding-bottom:4px;">03 · MONITOREO DE EVENTOS</td></tr>
+        <tr><td style="font-size:20px;color:#0B1F3A;font-weight:bold;padding-bottom:16px;">Estado operativo</td></tr>
+      </table>
+
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+        <tr>
+          <td width="24%" align="center" bgcolor="#F0FDF4" style="background:#F0FDF4;padding:16px 4px;">
+            <div style="font-size:24px;font-weight:bold;color:#16A34A;">$${Sev_online}$$</div>
+            <div style="font-size:11px;color:#64748B;">En línea</div>
+          </td>
+          <td width="1%" style="font-size:0;">&nbsp;</td>
+          <td width="24%" align="center" bgcolor="#F8FAFC" style="background:#F8FAFC;padding:16px 4px;">
+            <div style="font-size:24px;font-weight:bold;color:#475569;">$${Sev_offline}$$</div>
+            <div style="font-size:11px;color:#64748B;">Fuera de línea</div>
+          </td>
+          <td width="1%" style="font-size:0;">&nbsp;</td>
+          <td width="24%" align="center" bgcolor="#FFFBEB" style="background:#FFFBEB;padding:16px 4px;">
+            <div style="font-size:24px;font-weight:bold;color:#D97706;">$${Sev_advertencias}$$</div>
+            <div style="font-size:11px;color:#64748B;">Advertencias</div>
+          </td>
+          <td width="1%" style="font-size:0;">&nbsp;</td>
+          <td width="25%" align="center" bgcolor="#FEF2F2" style="background:#FEF2F2;padding:16px 4px;">
+            <div style="font-size:24px;font-weight:bold;color:#DC2626;">$${Sev_criticos}$$</div>
+            <div style="font-size:11px;color:#64748B;">Críticos</div>
+          </td>
+        </tr>
+      </table>
+
+      <!-- Top eventos (filas generadas en KNIME) -->
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:16px;font-size:13px;">
+        <tr>
+          <td style="padding:8px 0;border-bottom:2px solid #0B1F3A;color:#64748B;font-size:11px;letter-spacing:1px;">ATM</td>
+          <td style="padding:8px 0;border-bottom:2px solid #0B1F3A;color:#64748B;font-size:11px;letter-spacing:1px;">EVENTO</td>
+          <td align="right" style="padding:8px 0;border-bottom:2px solid #0B1F3A;color:#64748B;font-size:11px;letter-spacing:1px;">SEVERIDAD</td>
+        </tr>
+        $${Sev_filas_html}$$
+      </table>
+
+      <!-- CTA -->
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:32px;">
+        <tr><td align="center">
+          <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
+            <td bgcolor="#0A3D7A" style="background:#0A3D7A;padding:15px 34px;">
+              <a href="$${Surl_dashboard}$$" target="_blank" style="color:#FFFFFF;text-decoration:none;font-size:15px;font-weight:bold;display:inline-block;">Abrir dashboard &rarr;</a>
+            </td>
+          </tr></table>
+        </td></tr>
+        <tr><td align="center" style="padding:12px 0 26px 0;font-size:12px;color:#94A3B8;">Requiere acceso a la red interna</td></tr>
+      </table>
+
+    </td>
+  </tr>
+
+  <!-- PIE -->
+  <tr>
+    <td style="padding:20px 8px;font-size:11px;line-height:17px;color:#94A3B8;">
+      Ejecución: $${Shora_ejecucion}$$ &nbsp;·&nbsp; Flujo: $${Sflujo}$$ &nbsp;·&nbsp; Servidor: $${Sservidor}$$<br>
+      Mensaje automático generado por el RPA de Auditoría Continua. Uso interno y confidencial; no reenviar fuera de la organización.
+    </td>
+  </tr>
+
+</table>
+</td></tr>
+</table>
+</body>
+</html>
