@@ -1,0 +1,396 @@
+/* =============================================================================
+   EVENTOS ATM · LAS MISMAS 3 VISTAS, PERO COMO SELECT
+   Sin CREATE VIEW. Cada bloque se pega completo en su propio
+   DB Query Reader de KNIME.
+
+   ¿SE PUEDEN JUNTAR LAS 3 EN UN SOLO SELECT?
+   -----------------------------------------------------------------------------
+   Técnicamente sí, pero no conviene: tienen granos distintos.
+     · SELECT 1 → 1 fila por evento
+     · SELECT 2 → 1 fila por ATM y día
+     · SELECT 3 → 1 fila por timeout con su transacción
+   Si los metes en una sola tabla, Power BI duplica los montos al sumar
+   (un ATM con 8 eventos repetiría 8 veces su monto del día). Son tres
+   tablas en el modelo, unidas por MAESTRO_ATMS y CALENDARIO.
+
+   Si de verdad quieres un solo nodo: usa únicamente el SELECT 1 y haz el
+   agregado con medidas DAX. Pierdes velocidad en las tarjetas, pero el
+   modelo queda correcto. El SELECT 3 no se puede sustituir con DAX: necesita
+   el join por ventana de tiempo contra el journal.
+
+   >>> AJUSTAR <<< el nombre real de la tabla de eventos (aparece en los 3).
+   ============================================================================= */
+
+
+
+/* #############################################################################
+   ███ SELECT 1 · DETALLE DE EVENTOS  (grano: 1 evento)
+   Reemplaza tu tabla EVENTOS_ATMS en el modelo.
+   ############################################################################# */
+
+WITH LIMPIO AS (
+    SELECT
+        E.ID_EVENTO,
+        TRIM(E.ATMID)                                   AS ATMID,
+        TRUNC(E.FECHA_EVENTO)                           AS FECHA_EVENTO,
+        TRIM(E.HORA_EVENTO)                             AS HORA_EVENTO,
+        TRIM(E.EVENTO)                                  AS EVENTO,
+        TRIM(E.EVENTO_DETALLE)                          AS EVENTO_DETALLE,
+        TRIM(E.CATEGORIA)                               AS CATEGORIA_ORIG,
+        TRIM(E.TIPO_ATM)                                AS TIPO_ATM,
+        E.ARCHIVO_ORIGEN,
+        E.LINEA,
+        E.FECHA_CARGA,
+        TRIM(REGEXP_REPLACE(UPPER(E.DETALLE), '[^ -~]', ' '))   AS DETALLE_LIMPIO,
+        TRUNC(E.FECHA_EVENTO) +
+        TO_DSINTERVAL('0 ' ||
+            CASE WHEN LENGTH(TRIM(E.HORA_EVENTO)) = 5
+                 THEN TRIM(E.HORA_EVENTO) || ':00'
+                 ELSE TRIM(E.HORA_EVENTO)
+            END )                                       AS FECHA_HORA
+    FROM   AC_HN_AS_A_P3_ME_51_ATM_EVENTOS E       -- << nombre real
+),
+NORM AS (
+    SELECT  L.*,
+            CASE
+              WHEN UPPER(L.EVENTO_DETALLE) LIKE '%CASH_PRESENT_TIMEOUT%'
+                OR L.DETALLE_LIMPIO LIKE '%00000066%'                 THEN 'CASH_PRESENT_TIMEOUT'
+              WHEN UPPER(L.EVENTO_DETALLE) LIKE '%FORGOTTEN_CASH_REMOVED%'
+                OR L.DETALLE_LIMPIO LIKE '%00000068%'                 THEN 'FORGOTTEN_CASH_REMOVED'
+              WHEN L.DETALLE_LIMPIO LIKE '%GO OUT OF SERVICE%'
+                OR L.DETALLE_LIMPIO LIKE '%OUT OF SERVICE%'
+                OR UPPER(L.EVENTO)  LIKE 'OUT_OF_SE%'                 THEN 'OUT_OF_SERVICE'
+              WHEN L.DETALLE_LIMPIO LIKE '%GO IN SERVICE%'
+                OR L.DETALLE_LIMPIO LIKE '%IN SERVICE%'
+                OR UPPER(L.EVENTO)  LIKE 'IN_SERVICE%'                THEN 'IN_SERVICE'
+              WHEN L.DETALLE_LIMPIO LIKE '%SERVICEMODE ENTERED%'      THEN 'SERVICEMODE_IN'
+              WHEN L.DETALLE_LIMPIO LIKE '%SERVICEMODE LEFT%'         THEN 'SERVICEMODE_OUT'
+              WHEN L.DETALLE_LIMPIO LIKE '%CASH COUNTERS BEFORE%'     THEN 'COUNTERS_BEFORE'
+              WHEN L.DETALLE_LIMPIO LIKE '%CASH COUNTERS AFTER%'      THEN 'COUNTERS_AFTER'
+              WHEN UPPER(L.EVENTO) LIKE 'CDM_ERROR%'                  THEN 'CDM_ERROR_OTRO'
+              ELSE 'OTRO'
+            END                                                       AS EVENTO_NORM
+    FROM    LIMPIO L
+),
+FLAGS AS (
+    SELECT  N.*,
+            CASE WHEN EVENTO_NORM = 'CASH_PRESENT_TIMEOUT'   THEN 1 ELSE 0 END AS ES_TIMEOUT,
+            CASE WHEN EVENTO_NORM = 'FORGOTTEN_CASH_REMOVED' THEN 1 ELSE 0 END AS ES_RETRACT,
+            CASE WHEN EVENTO_NORM = 'OUT_OF_SERVICE'         THEN 1 ELSE 0 END AS ES_OUT_SERVICE,
+            CASE WHEN EVENTO_NORM = 'IN_SERVICE'             THEN 1 ELSE 0 END AS ES_IN_SERVICE,
+            CASE WHEN EVENTO_NORM = 'SERVICEMODE_IN'         THEN 1 ELSE 0 END AS ES_SERVICEMODE_IN,
+            CASE WHEN EVENTO_NORM = 'SERVICEMODE_OUT'        THEN 1 ELSE 0 END AS ES_SERVICEMODE_OUT,
+            CASE WHEN EVENTO_NORM = 'COUNTERS_BEFORE'        THEN 1 ELSE 0 END AS ES_CONT_BEFORE,
+            CASE WHEN EVENTO_NORM = 'COUNTERS_AFTER'         THEN 1 ELSE 0 END AS ES_CONT_AFTER,
+            CASE
+              WHEN EVENTO_NORM IN ('CASH_PRESENT_TIMEOUT','FORGOTTEN_CASH_REMOVED') THEN 'EFECTIVO_NO_ENTREGADO'
+              WHEN EVENTO_NORM IN ('OUT_OF_SERVICE','IN_SERVICE')                   THEN 'DISPONIBILIDAD'
+              WHEN EVENTO_NORM IN ('SERVICEMODE_IN','SERVICEMODE_OUT')              THEN 'ACCESO_FISICO'
+              WHEN EVENTO_NORM IN ('COUNTERS_BEFORE','COUNTERS_AFTER')              THEN 'ADMINISTRACION_EFECTIVO'
+              WHEN EVENTO_NORM = 'CDM_ERROR_OTRO'                                   THEN 'FALLA_DISPENSADOR'
+              ELSE 'OTRO'
+            END                                                       AS CATEGORIA_NORM,
+            CASE EVENTO_NORM
+              WHEN 'CASH_PRESENT_TIMEOUT'   THEN 5
+              WHEN 'FORGOTTEN_CASH_REMOVED' THEN 3
+              WHEN 'SERVICEMODE_IN'         THEN 4
+              WHEN 'OUT_OF_SERVICE'         THEN 3
+              WHEN 'CDM_ERROR_OTRO'         THEN 4
+              ELSE 1
+            END                                                       AS SEVERIDAD,
+            CASE WHEN EVENTO_NORM = 'CASH_PRESENT_TIMEOUT' THEN
+                MIN ( CASE WHEN EVENTO_NORM = 'FORGOTTEN_CASH_REMOVED' THEN FECHA_HORA END )
+                OVER ( PARTITION BY ATMID ORDER BY FECHA_HORA
+                       ROWS BETWEEN 1 FOLLOWING AND 3 FOLLOWING )
+            END                                                       AS FH_RETRACT,
+            CASE WHEN EVENTO_NORM = 'IN_SERVICE' THEN
+                LAST_VALUE ( CASE WHEN EVENTO_NORM = 'OUT_OF_SERVICE' THEN FECHA_HORA END IGNORE NULLS )
+                OVER ( PARTITION BY ATMID ORDER BY FECHA_HORA
+                       ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING )
+            END                                                       AS FH_OUT_PREVIO,
+            CASE WHEN EVENTO_NORM = 'SERVICEMODE_IN' THEN
+                MIN ( CASE WHEN EVENTO_NORM = 'SERVICEMODE_OUT' THEN FECHA_HORA END )
+                OVER ( PARTITION BY ATMID ORDER BY FECHA_HORA
+                       ROWS BETWEEN 1 FOLLOWING AND 10 FOLLOWING )
+            END                                                       AS FH_SERVICEMODE_OUT,
+            CASE WHEN EVENTO_NORM = 'SERVICEMODE_IN' THEN
+                SUM ( CASE WHEN EVENTO_NORM IN ('COUNTERS_BEFORE','COUNTERS_AFTER') THEN 1 ELSE 0 END )
+                OVER ( PARTITION BY ATMID ORDER BY FECHA_HORA
+                       ROWS BETWEEN 1 FOLLOWING AND 10 FOLLOWING )
+            END                                                       AS CONTADORES_EN_VENTANA,
+            EXTRACT ( HOUR FROM CAST(FECHA_HORA AS TIMESTAMP) )       AS HORA
+    FROM    NORM N
+)
+SELECT
+    F.ID_EVENTO,
+    F.ATMID,
+    F.FECHA_EVENTO,
+    F.HORA_EVENTO,
+    F.FECHA_HORA,
+    F.HORA,
+    CASE
+      WHEN F.HORA BETWEEN  0 AND  5 THEN 'Madrugada'
+      WHEN F.HORA BETWEEN  6 AND 11 THEN 'Mañana'
+      WHEN F.HORA BETWEEN 12 AND 17 THEN 'Tarde'
+      ELSE 'Noche'
+    END                                                     AS FRANJA,
+    F.EVENTO,
+    F.EVENTO_DETALLE,
+    F.EVENTO_NORM,
+    F.CATEGORIA_ORIG,
+    F.CATEGORIA_NORM,
+    F.SEVERIDAD,
+    F.TIPO_ATM,
+    F.ARCHIVO_ORIGEN,
+    F.LINEA,
+    F.FECHA_CARGA,
+    F.ES_TIMEOUT, F.ES_RETRACT, F.ES_OUT_SERVICE, F.ES_IN_SERVICE,
+    F.ES_SERVICEMODE_IN, F.ES_SERVICEMODE_OUT, F.ES_CONT_BEFORE, F.ES_CONT_AFTER,
+    CASE WHEN F.FH_RETRACT IS NOT NULL THEN 1 ELSE 0 END    AS TIENE_RETRACT,
+    CASE WHEN F.ES_TIMEOUT = 1 AND F.FH_RETRACT IS NULL THEN 1 ELSE 0 END AS ES_TIMEOUT_SIN_RETRACT,
+    ROUND ( (F.FH_RETRACT - F.FECHA_HORA) * 86400 )         AS SEG_HASTA_RETRACT,
+    CASE WHEN ROUND((F.FH_RETRACT - F.FECHA_HORA) * 86400) > 60 THEN 1 ELSE 0 END AS ES_RETRACT_TARDIO,
+    ROUND ( (F.FECHA_HORA - F.FH_OUT_PREVIO) * 1440, 2 )    AS MIN_FUERA_SERVICIO,
+    CASE WHEN F.ES_IN_SERVICE = 1 AND F.FH_OUT_PREVIO IS NULL THEN 1 ELSE 0 END AS ES_IN_SIN_OUT,
+    ROUND ( (F.FH_SERVICEMODE_OUT - F.FECHA_HORA) * 1440, 2 ) AS MIN_EN_MODO_SERVICIO,
+    CASE WHEN F.ES_SERVICEMODE_IN = 1 AND NVL(F.CONTADORES_EN_VENTANA,0) < 2
+         THEN 1 ELSE 0 END                                  AS ES_ACCESO_SIN_CONTADORES
+FROM    FLAGS F;
+
+
+
+/* #############################################################################
+   ███ SELECT 2 · KPI POR ATM Y DÍA  (grano: ATMID + FECHA)
+   Mismo grano que KPI_TRANSACCIONAL.
+   ############################################################################# */
+
+WITH LIMPIO AS (
+    SELECT
+        TRIM(E.ATMID)                                   AS ATMID,
+        TRUNC(E.FECHA_EVENTO)                           AS FECHA_EVENTO,
+        TRIM(E.EVENTO)                                  AS EVENTO,
+        TRIM(E.EVENTO_DETALLE)                          AS EVENTO_DETALLE,
+        TRIM(E.TIPO_ATM)                                AS TIPO_ATM,
+        TRIM(REGEXP_REPLACE(UPPER(E.DETALLE), '[^ -~]', ' '))   AS DETALLE_LIMPIO,
+        TRUNC(E.FECHA_EVENTO) +
+        TO_DSINTERVAL('0 ' ||
+            CASE WHEN LENGTH(TRIM(E.HORA_EVENTO)) = 5
+                 THEN TRIM(E.HORA_EVENTO) || ':00'
+                 ELSE TRIM(E.HORA_EVENTO)
+            END )                                       AS FECHA_HORA
+    FROM   AC_HN_AS_A_P3_ME_51_ATM_EVENTOS E       -- << nombre real
+),
+NORM AS (
+    SELECT  L.*,
+            CASE
+              WHEN UPPER(L.EVENTO_DETALLE) LIKE '%CASH_PRESENT_TIMEOUT%'
+                OR L.DETALLE_LIMPIO LIKE '%00000066%'                 THEN 'CASH_PRESENT_TIMEOUT'
+              WHEN UPPER(L.EVENTO_DETALLE) LIKE '%FORGOTTEN_CASH_REMOVED%'
+                OR L.DETALLE_LIMPIO LIKE '%00000068%'                 THEN 'FORGOTTEN_CASH_REMOVED'
+              WHEN L.DETALLE_LIMPIO LIKE '%GO OUT OF SERVICE%'
+                OR L.DETALLE_LIMPIO LIKE '%OUT OF SERVICE%'
+                OR UPPER(L.EVENTO)  LIKE 'OUT_OF_SE%'                 THEN 'OUT_OF_SERVICE'
+              WHEN L.DETALLE_LIMPIO LIKE '%GO IN SERVICE%'
+                OR L.DETALLE_LIMPIO LIKE '%IN SERVICE%'
+                OR UPPER(L.EVENTO)  LIKE 'IN_SERVICE%'                THEN 'IN_SERVICE'
+              WHEN L.DETALLE_LIMPIO LIKE '%SERVICEMODE ENTERED%'      THEN 'SERVICEMODE_IN'
+              WHEN L.DETALLE_LIMPIO LIKE '%SERVICEMODE LEFT%'         THEN 'SERVICEMODE_OUT'
+              WHEN L.DETALLE_LIMPIO LIKE '%CASH COUNTERS BEFORE%'     THEN 'COUNTERS_BEFORE'
+              WHEN L.DETALLE_LIMPIO LIKE '%CASH COUNTERS AFTER%'      THEN 'COUNTERS_AFTER'
+              WHEN UPPER(L.EVENTO) LIKE 'CDM_ERROR%'                  THEN 'CDM_ERROR_OTRO'
+              ELSE 'OTRO'
+            END                                                       AS EVENTO_NORM
+    FROM    LIMPIO L
+),
+FLAGS AS (
+    SELECT  N.*,
+            CASE WHEN EVENTO_NORM = 'CASH_PRESENT_TIMEOUT'   THEN 1 ELSE 0 END AS ES_TIMEOUT,
+            CASE WHEN EVENTO_NORM = 'FORGOTTEN_CASH_REMOVED' THEN 1 ELSE 0 END AS ES_RETRACT,
+            CASE WHEN EVENTO_NORM = 'OUT_OF_SERVICE'         THEN 1 ELSE 0 END AS ES_OUT_SERVICE,
+            CASE WHEN EVENTO_NORM = 'IN_SERVICE'             THEN 1 ELSE 0 END AS ES_IN_SERVICE,
+            CASE WHEN EVENTO_NORM = 'SERVICEMODE_IN'         THEN 1 ELSE 0 END AS ES_SERVICEMODE_IN,
+            CASE WHEN EVENTO_NORM = 'CDM_ERROR_OTRO'         THEN 1 ELSE 0 END AS ES_FALLA_DISP,
+            CASE WHEN EVENTO_NORM = 'CASH_PRESENT_TIMEOUT' THEN
+                MIN ( CASE WHEN EVENTO_NORM = 'FORGOTTEN_CASH_REMOVED' THEN FECHA_HORA END )
+                OVER ( PARTITION BY ATMID ORDER BY FECHA_HORA
+                       ROWS BETWEEN 1 FOLLOWING AND 3 FOLLOWING )
+            END                                                       AS FH_RETRACT,
+            CASE WHEN EVENTO_NORM = 'IN_SERVICE' THEN
+                LAST_VALUE ( CASE WHEN EVENTO_NORM = 'OUT_OF_SERVICE' THEN FECHA_HORA END IGNORE NULLS )
+                OVER ( PARTITION BY ATMID ORDER BY FECHA_HORA
+                       ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING )
+            END                                                       AS FH_OUT_PREVIO,
+            CASE WHEN EVENTO_NORM = 'SERVICEMODE_IN' THEN
+                SUM ( CASE WHEN EVENTO_NORM IN ('COUNTERS_BEFORE','COUNTERS_AFTER') THEN 1 ELSE 0 END )
+                OVER ( PARTITION BY ATMID ORDER BY FECHA_HORA
+                       ROWS BETWEEN 1 FOLLOWING AND 10 FOLLOWING )
+            END                                                       AS CONTADORES_EN_VENTANA
+    FROM    NORM N
+),
+DET AS (
+    SELECT  F.ATMID,
+            F.FECHA_EVENTO,
+            F.TIPO_ATM,
+            F.ES_TIMEOUT,
+            F.ES_RETRACT,
+            F.ES_OUT_SERVICE,
+            F.ES_IN_SERVICE,
+            F.ES_SERVICEMODE_IN,
+            F.ES_FALLA_DISP,
+            CASE WHEN F.ES_TIMEOUT = 1 AND F.FH_RETRACT IS NULL THEN 1 ELSE 0 END AS ES_TIMEOUT_SIN_RETRACT,
+            ROUND ( (F.FH_RETRACT - F.FECHA_HORA) * 86400 )                       AS SEG_HASTA_RETRACT,
+            CASE WHEN ROUND((F.FH_RETRACT - F.FECHA_HORA) * 86400) > 60 THEN 1 ELSE 0 END AS ES_RETRACT_TARDIO,
+            ROUND ( (F.FECHA_HORA - F.FH_OUT_PREVIO) * 1440, 2 )                  AS MIN_FUERA_SERVICIO,
+            CASE WHEN F.ES_IN_SERVICE = 1 AND F.FH_OUT_PREVIO IS NULL THEN 1 ELSE 0 END AS ES_IN_SIN_OUT,
+            CASE WHEN F.ES_SERVICEMODE_IN = 1 AND NVL(F.CONTADORES_EN_VENTANA,0) < 2
+                 THEN 1 ELSE 0 END                                                AS ES_ACCESO_SIN_CONTADORES
+    FROM    FLAGS F
+),
+AGG AS (
+    SELECT
+        ATMID,
+        FECHA_EVENTO,
+        MAX(TIPO_ATM)                               AS TIPO_ATM,
+        COUNT(*)                                    AS EVENTOS_TOTALES,
+        SUM(ES_TIMEOUT)                             AS TIMEOUTS,
+        SUM(ES_RETRACT)                             AS RETRACTS,
+        SUM(ES_TIMEOUT_SIN_RETRACT)                 AS TIMEOUTS_SIN_RETRACT,
+        SUM(ES_RETRACT_TARDIO)                      AS RETRACTS_TARDIOS,
+        ROUND(AVG(SEG_HASTA_RETRACT),1)             AS SEG_PROM_RETRACT,
+        SUM(ES_OUT_SERVICE)                         AS SALIDAS_SERVICIO,
+        SUM(ES_IN_SERVICE)                          AS ENTRADAS_SERVICIO,
+        SUM(ES_IN_SIN_OUT)                          AS ENTRADAS_SIN_SALIDA,
+        NVL(ROUND(SUM(MIN_FUERA_SERVICIO),2),0)     AS MIN_FUERA_SERVICIO,
+        SUM(ES_SERVICEMODE_IN)                      AS ACCESOS_MODO_SERVICIO,
+        SUM(ES_ACCESO_SIN_CONTADORES)               AS ACCESOS_SIN_CONTADORES,
+        SUM(ES_FALLA_DISP)                          AS FALLAS_DISPENSADOR,
+        SUM(ES_TIMEOUT_SIN_RETRACT)   * 5 +
+        SUM(ES_RETRACT)               * 3 +
+        SUM(ES_ACCESO_SIN_CONTADORES) * 4 +
+        SUM(ES_OUT_SERVICE)           * 2 +
+        SUM(ES_RETRACT_TARDIO)        * 3           AS INDICE_RIESGO
+    FROM    DET
+    GROUP   BY ATMID, FECHA_EVENTO
+)
+SELECT
+    A.*,
+    ROUND( (1440 - A.MIN_FUERA_SERVICIO) / 1440 * 100, 2 )   AS PCT_DISPONIBILIDAD,
+    CASE
+      WHEN A.INDICE_RIESGO >= 22 THEN 'ALTO'
+      WHEN A.INDICE_RIESGO >=  7 THEN 'MEDIO'
+      ELSE 'BAJO'
+    END                                                      AS NIVEL_RIESGO
+FROM    AGG A;
+
+
+
+/* #############################################################################
+   ███ SELECT 3 · EVENTO ↔ TRANSACCIÓN  (grano: 1 timeout con su transacción)
+   El puente que le pone monto, cuenta y AUTHID al evento.
+   ############################################################################# */
+
+WITH LIMPIO AS (
+    SELECT
+        TRIM(E.ATMID)                                   AS ATMID,
+        TRUNC(E.FECHA_EVENTO)                           AS FECHA_EVENTO,
+        TRIM(E.EVENTO)                                  AS EVENTO,
+        TRIM(E.EVENTO_DETALLE)                          AS EVENTO_DETALLE,
+        TRIM(REGEXP_REPLACE(UPPER(E.DETALLE), '[^ -~]', ' '))   AS DETALLE_LIMPIO,
+        TRUNC(E.FECHA_EVENTO) +
+        TO_DSINTERVAL('0 ' ||
+            CASE WHEN LENGTH(TRIM(E.HORA_EVENTO)) = 5
+                 THEN TRIM(E.HORA_EVENTO) || ':00'
+                 ELSE TRIM(E.HORA_EVENTO)
+            END )                                       AS FECHA_HORA
+    FROM   AC_HN_AS_A_P3_ME_51_ATM_EVENTOS E       -- << nombre real
+),
+NORM AS (
+    SELECT  L.*,
+            CASE
+              WHEN UPPER(L.EVENTO_DETALLE) LIKE '%CASH_PRESENT_TIMEOUT%'
+                OR L.DETALLE_LIMPIO LIKE '%00000066%'                 THEN 'CASH_PRESENT_TIMEOUT'
+              WHEN UPPER(L.EVENTO_DETALLE) LIKE '%FORGOTTEN_CASH_REMOVED%'
+                OR L.DETALLE_LIMPIO LIKE '%00000068%'                 THEN 'FORGOTTEN_CASH_REMOVED'
+              ELSE 'OTRO'
+            END                                                       AS EVENTO_NORM
+    FROM    LIMPIO L
+),
+EV AS (
+    SELECT  ATMID,
+            FECHA_EVENTO,
+            FECHA_HORA,
+            CASE WHEN
+                MIN ( CASE WHEN EVENTO_NORM = 'FORGOTTEN_CASH_REMOVED' THEN FECHA_HORA END )
+                OVER ( PARTITION BY ATMID ORDER BY FECHA_HORA
+                       ROWS BETWEEN 1 FOLLOWING AND 3 FOLLOWING ) IS NOT NULL
+                 THEN 1 ELSE 0 END                                    AS TIENE_RETRACT,
+            ROUND ( (
+                MIN ( CASE WHEN EVENTO_NORM = 'FORGOTTEN_CASH_REMOVED' THEN FECHA_HORA END )
+                OVER ( PARTITION BY ATMID ORDER BY FECHA_HORA
+                       ROWS BETWEEN 1 FOLLOWING AND 3 FOLLOWING )
+                - FECHA_HORA ) * 86400 )                              AS SEG_HASTA_RETRACT,
+            EVENTO_NORM
+    FROM    NORM
+),
+EV_TO AS (
+    SELECT  ATMID, FECHA_EVENTO, FECHA_HORA, TIENE_RETRACT, SEG_HASTA_RETRACT,
+            CASE WHEN TIENE_RETRACT = 0 THEN 1 ELSE 0 END AS ES_TIMEOUT_SIN_RETRACT
+    FROM    EV
+    WHERE   EVENTO_NORM = 'CASH_PRESENT_TIMEOUT'
+),
+TRX AS (
+    SELECT TRIM(ATMID)                      AS ATMID,
+           TO_DATE(FECHA,'DD/MM/RR')        AS FECHA_TRX,
+           TRIM(AUTHID)                     AS AUTHID,
+           TRIM(CUENTA)                     AS CUENTA,
+           TRIM(TARJETA)                    AS TARJETA,
+           TRIM(CASHPRESENTED)              AS CASHPRESENTED,
+           TRIM(CASHTAKEN)                  AS CASHTAKEN,
+           TRIM(ALERTA_OPERATIVA)           AS ALERTA_OPERATIVA,
+           NVL(MONTO_RETIRO,0)              AS MONTO_RETIRO,
+           TO_DATE(FECHA,'DD/MM/RR') +
+             TO_DSINTERVAL('0 ' || TRIM(HORA_FIN))  AS FECHA_HORA_FIN
+    FROM   AC_HN_AS_A_P3_ME_51_ATM_JOURNAL_STG
+    WHERE  NVL(MONTO_RETIRO,0) > 0
+)
+SELECT
+    E.ATMID,
+    E.FECHA_EVENTO,
+    E.FECHA_HORA                            AS HORA_EVENTO,
+    E.TIENE_RETRACT,
+    E.SEG_HASTA_RETRACT,
+    E.ES_TIMEOUT_SIN_RETRACT,
+    T.AUTHID,
+    T.CUENTA,
+    T.TARJETA,
+    T.MONTO_RETIRO,
+    T.CASHPRESENTED,
+    T.CASHTAKEN,
+    T.ALERTA_OPERATIVA,
+    ROUND((E.FECHA_HORA - T.FECHA_HORA_FIN) * 86400) AS SEG_DIFERENCIA,
+    CASE
+      WHEN T.AUTHID IS NULL             THEN 'EVENTO_SIN_TRANSACCION'
+      WHEN E.ES_TIMEOUT_SIN_RETRACT = 1 THEN 'EFECTIVO_SIN_TRAZABILIDAD'
+      WHEN T.CASHTAKEN = 'NO'           THEN 'CLIENTE_NO_TOMO_EFECTIVO'
+      ELSE                                   'REVISAR'
+    END                                     AS DIAGNOSTICO
+FROM        EV_TO E
+LEFT  JOIN  TRX T
+       ON   T.ATMID = E.ATMID
+      AND   T.FECHA_HORA_FIN BETWEEN E.FECHA_HORA - INTERVAL '120' SECOND
+                                 AND E.FECHA_HORA + INTERVAL '120' SECOND;
+
+
+/* =============================================================================
+   NOTA: el SELECT 3 puede devolver más de una fila por evento si hubo dos
+   retiros del mismo ATM dentro de la ventana de ±120 segundos. Si te pasa,
+   baja la ventana a 60 segundos o quédate con el más cercano agregando:
+
+       QUALIFY ROW_NUMBER() OVER (
+           PARTITION BY E.ATMID, E.FECHA_HORA
+           ORDER BY ABS(E.FECHA_HORA - T.FECHA_HORA_FIN)
+       ) = 1
+
+   (QUALIFY existe desde Oracle 23ai; en versiones anteriores envuelve el
+   SELECT en una subconsulta y filtra por RN = 1.)
+   ============================================================================= */
