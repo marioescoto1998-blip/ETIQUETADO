@@ -1,0 +1,1188 @@
+# =====================================================================
+# PARSER NCR EJ  ->  NODO "PYTHON SCRIPT" DE KNIME
+# Salidas (4 puertos):
+#   0 -> Débitos EXITOSOS      (RespCode 000/001 y Monto != 0)
+#   1 -> Trx NO exitosas       (RespCode distinto de 000 y 001)
+#   2 -> Eventos del ATM       (operación, supervisor, efectivo y controles)
+#   3 -> Control de CASH        (cómo va bajando por transacción)
+#
+# Las columnas de los 4 puertos NO cambian. Lo nuevo son más tipos de
+# evento en el puerto 2 y valores corregidos de efectivo por transacción.
+# =====================================================================
+
+import re
+import pandas as pd
+import knime.scripting.io as knio
+from pathlib import Path
+from datetime import datetime
+
+# ---------------------------------------------------------------------
+# 1. ENTRADA  (flow variable de KNIME)
+# ---------------------------------------------------------------------
+CARPETA_LOGS = Path(knio.flow_variables["RutaATMNCR"])
+
+# ---------------------------------------------------------------------
+# 2. REGEX PRE-COMPILADOS
+# ---------------------------------------------------------------------
+RE_HORA      = re.compile(r"(\d{2}:\d{2}:\d{2})")
+RE_TRX_END   = re.compile(r"(\d{2}:\d{2}:\d{2}).*TRANSACTION END", re.I)
+RE_DATE      = re.compile(r"(\d{2}/\d{2}/\d{2})\s+(\d{2}:\d{2})")
+
+# Encabezado de evento NCR:  *139*06/23/2026*09:09*   (MM/DD/YYYY)
+RE_EVENTO_NCR = re.compile(r"\*(\d+)\*(\d{2}/\d{2}/\d{4})\*(\d{2}:\d{2})\*")
+
+# Efectivo por transacción
+RE_NOTES_PRESENTED = re.compile(r"NOTES PRESENTED\s+(\d+),(\d+),(\d+),(\d+)", re.I)
+RE_REMAINING_NCR   = re.compile(r"^REMAINING\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)", re.I)
+
+# Bloques de supervisor
+RE_TYPE_VALOR   = re.compile(r"TYPE\s*(\d)\s*=\s*(\d+)", re.I)
+RE_FILA_REPORTE = re.compile(
+    r"^[+=]?\s*(CASSETTE|REJECTED|REMAINING|DISPENSED|TOTAL)\s+(\d+)\s+(\d+)\s*$", re.I
+)
+RE_DATETIME_REP = re.compile(r"DATE-TIME\s*=\s*(\d{2}/\d{2}/\d{2})\s+(\d{2}:\d{2})", re.I)
+RE_LAST_CLEARED = re.compile(r"LAST CLEARED\s+(\d{2}/\d{2}/\d{2}\s+\d{2}:\d{2})", re.I)
+RE_CARDS_CAPT   = re.compile(r"CARDS CAPTURED\s+(\d+)", re.I)
+RE_ACTIVITY     = re.compile(r"ACTIVITY COUNT\s*=\s*(\d+)", re.I)
+RE_FECHA_TAREA  = re.compile(
+    r"(\d{1,2})/(\d{1,2})/(\d{4})\s+(\d{1,2}):(\d{2}):(\d{2})\s*(AM|PM)", re.I
+)
+RE_CASETE_INFO  = re.compile(r"^(TOP|SECOND|THIRD|FOURTH)\s+(\w+)\s+(\d+)\s+(\d+)\s+(\w+)", re.I)
+
+# ATM_ADMIN: reporte de totales por casetero (C1..C4 STR/INC/DEC/OUT/END)
+RE_ADMIN_FECHA = re.compile(r"(\d{2}/\d{2}/\d{2})\s+(\d{2}:\d{2})\s+(SHN\d+)", re.I)
+RE_ADMIN_STR   = re.compile(r"C(\d)\s+STR\s+[\$,]*([\d,]+)", re.I)
+RE_ADMIN_INC   = re.compile(r"\*INC\s+[\$,]*([\d,]+)\s+\*DEC\s+[\$,]*([\d,]+)", re.I)
+RE_ADMIN_OUT   = re.compile(r"\*OUT\s+[\$,]*([\d,]+)\s+\*END\s+[\$,]*([\d,]+)", re.I)
+
+RE_GENAC2   = re.compile(r"GENAC 2\s*:\s*(\w+)", re.I)
+RE_ATM_ANY  = re.compile(r"\b(SHN\d{5})\b", re.I)
+
+# Códigos de control de impresión NCR: ESC  [020t  [05p  [00p  (I  (1  )1
+RE_CTRL_NCR = re.compile(r"\x1b|\[\d{2,3}[a-zA-Z]|\((?:I|1)|\)1")
+
+
+# ---------------------------------------------------------------------
+# 3. CATÁLOGOS
+# ---------------------------------------------------------------------
+ALERTA_POR_RESP = {
+    "000": "EXITOSA",
+    "001": "EXITOSA",
+    "058": "FONDOS_INSUFICIENTES",
+    "060": "EXCEDE_LIMITE_USO",
+    "063": "LIMITE_RETIROS_EXCEDIDO",
+    "072": "NO_SE_PUEDE_PROCESAR",
+    "056": "CUENTA_INVALIDA",
+}
+
+INCIDENTE_POR_RESP = {
+    "058": "FONDOS_INSUFICIENTES",
+    "060": "EXCEDE_LIMITE_USO",
+    "063": "LIMITE_RETIROS_EXCEDIDO",
+    "072": "NO_SE_PUEDE_PROCESAR",
+    "056": "TRANS_CUENTA_INVALIDA",
+}
+
+ALERTA_OPERATIVA = [
+
+    ("TIMEOUT FROM TIMEOUT STATE", "TIMEOUT"),
+
+    ("CUSTOMER CANCELLED", "CUSTOMER_CANCELLED"),
+
+    ("NOTES TAKEN", "NOTES_TAKEN"),
+
+    ("SST OUT OF SERVICE", "OUT_OF_SERVICE"),
+
+    ("SST IN SERVICE", "IN_SERVICE")
+]
+
+CODIGOS_OK = ["000", "001"]
+
+# ---------------------------------------------------------------------
+# Denominación REAL (Lempiras) de cada TYPE del dispensador NCR.
+# OJO: la fila "DENOMINATION 5 10 20 50" y la moneda "GBP" del journal
+# son valores de fábrica del NCR, NO la denominación real.
+# Validado con SHN00376: C1 STR 180,000 / 1,800 billetes = L100,
+# C3 STR 750,000 / 1,500 billetes = L500.
+# Si un ATM tiene otra configuración, agrégalo en DENOM_NCR_POR_ATM.
+# ---------------------------------------------------------------------
+DENOM_NCR_DEFAULT = {1: 100, 2: 100, 3: 500, 4: 500}
+
+DENOM_NCR_POR_ATM = {
+    # "SHN00XXX": {1: 100, 2: 200, 3: 500, 4: 500},
+}
+
+TIPOS_CON_EFECTIVO = {"RETIRO", "*WITHDRAWL", "RET.CUPON", "ANTICIPO"}
+
+TRX_COLUMNS = [
+    "Fecha", "Hora_TRX", "Hora_Inicio", "Hora_Fin", "Trace", "Seq", "Tipo_TRX",
+    "ATMID", "Tarjeta", "Cuenta", "Monto", "AuthID", "RespCode", "RespDesc",
+    "Alerta", "Alerta_Operativa",
+    "Dispensed_T1", "Dispensed_T2", "Dispensed_T3", "Dispensed_T4",
+    "Remaining_T1", "Remaining_T2", "Remaining_T3", "Remaining_T4",
+    "CashPresented", "CashTaken", "Movimiento_Efectivo","Origen_TRX", "Monto_Retiro",
+    "Monto_Comision", "ArchivoOrigen",
+]
+
+
+EVENT_COLUMNS = [
+    "ID_EVENTO",
+    "Fecha",
+    "Hora",
+    "ATMID",
+    "Evento",
+    "Evento_Detalle",
+    "Categoria",
+    "Detalle",
+    "Linea",
+    "ArchivoOrigen"
+]
+
+CASH_COLUMNS = [
+    "Hora_Inicio", "Hora_TRX", "Hora_Fin", "Alerta", "Alerta_Operativa",
+    "Fecha", "Hora", "Trace", "Seq", "ATMID",
+    "Dispensed_T1", "Dispensed_T2", "Dispensed_T3", "Dispensed_T4",
+    "Remaining_T1", "Remaining_T2", "Remaining_T3", "Remaining_T4",
+    "ArchivoOrigen",
+]
+
+DISP_COLS = ["Dispensed_T1", "Dispensed_T2", "Dispensed_T3", "Dispensed_T4"]
+REM_COLS  = ["Remaining_T1", "Remaining_T2", "Remaining_T3", "Remaining_T4"]
+
+
+EVENTOS_CLAVE_NCR = {
+
+    "SST OUT OF SERVICE": "OUT_OF_SERVICE",
+
+    "SST IN SERVICE": "IN_SERVICE",
+
+    "SST ON-LINE": "ONLINE",
+
+    "SST OFF-LINE": "OFFLINE",
+
+    "SUPERVISOR MODE ENTRY": "SUPERVISOR_MODE_ENTRY",
+
+    "SUPERVISOR MODE EXIT": "SUPERVISOR_MODE_EXIT",
+
+    "SERVICEMODE ENTERED": "SUPERVISOR_MODE_ENTRY",
+
+    "SERVICEMODE LEFT": "SUPERVISOR_MODE_EXIT",
+
+    # --- NUEVO: tareas dentro del modo supervisor ---
+    "SUPERVISOR TASK ENTERED": "SUPERVISOR_TASK_ENTERED",
+
+    "SUPERVISOR TASK EXITED": "SUPERVISOR_TASK_EXITED",
+
+    # --- NUEVO: reporte de contadores impreso en supervisor ---
+    "MACHINE NO =": "SUPERVISOR_CASH_REPORT",
+
+    # --- NUEVO: tabla de configuración de caseteras ---
+    "CASSETTE INFORMATION": "CASSETTE_INFO",
+
+    "CUSTOMER CANCELLED":
+        "CUSTOMER_CANCELLED",
+
+    "TIMEOUT FROM TIMEOUT STATE":
+        "TIMEOUT",
+
+    "CANCEL FROM TIMEOUT STATE":
+        "TIMEOUT",
+
+    "CARD EJECT TIMER EXPIRED":
+        "CARD_EJECT_TIMEOUT",
+
+    # --- NUEVO: retiro sin tarjeta ---
+    "CARDLESS TRANSACTION START":
+        "CARDLESS_TRANSACTION",
+
+    # --- NUEVO: billetes retraídos ---
+    "NOTES RETRACTED":
+        "NOTES_RETRACTED",
+
+    "CASH ADDED":
+        "CASH_ADDED",
+
+    "TOP CASSETTE REMOVED":
+        "TOP_CASSETTE_REMOVED",
+
+    "TOP CASSETTE INSERTED":
+        "TOP_CASSETTE_INSERTED",
+
+    "SECOND CASSETTE REMOVED":
+        "SECOND_CASSETTE_REMOVED",
+
+    "SECOND CASSETTE INSERTED":
+        "SECOND_CASSETTE_INSERTED",
+
+    # --- NUEVO: caseteras 3 y 4 ---
+    "THIRD CASSETTE REMOVED":
+        "THIRD_CASSETTE_REMOVED",
+
+    "THIRD CASSETTE INSERTED":
+        "THIRD_CASSETTE_INSERTED",
+
+    "FOURTH CASSETTE REMOVED":
+        "FOURTH_CASSETTE_REMOVED",
+
+    "FOURTH CASSETTE INSERTED":
+        "FOURTH_CASSETTE_INSERTED",
+
+    "REJECT BIN REMOVED":
+        "REJECT_BIN_REMOVED",
+
+    "REJECT BIN INSERTED":
+        "REJECT_BIN_INSERTED",
+
+    "SAFE DOOR OPENED":
+        "SAFE_DOOR_OPENED",
+
+    "SAFE DOOR CLOSED":
+        "SAFE_DOOR_CLOSED",
+
+    "OPERATOR DOOR OPENED":
+        "OPERATOR_DOOR_OPENED",
+
+    "OPERATOR DOOR CLOSED":
+        "OPERATOR_DOOR_CLOSED",
+
+    "CASH COUNTS CLEARED":
+        "CASH_COUNTS_CLEARED",
+
+    "CASH DISPENSER ERROR IGNORED":
+        "CASH_DISPENSER_ERROR",
+
+    "PASSWORD CHANGED":
+        "PASSWORD_CHANGED"
+
+}
+
+# Detalle fijo para eventos que no necesitan leer más líneas
+DETALLE_FIJO = {
+    "TOP_CASSETTE_REMOVED": "CASSETTE_TOP",
+    "TOP_CASSETTE_INSERTED": "CASSETTE_TOP",
+    "SECOND_CASSETTE_REMOVED": "CASSETTE_SECOND",
+    "SECOND_CASSETTE_INSERTED": "CASSETTE_SECOND",
+    "THIRD_CASSETTE_REMOVED": "CASSETTE_THIRD",
+    "THIRD_CASSETTE_INSERTED": "CASSETTE_THIRD",
+    "FOURTH_CASSETTE_REMOVED": "CASSETTE_FOURTH",
+    "FOURTH_CASSETTE_INSERTED": "CASSETTE_FOURTH",
+    "REJECT_BIN_REMOVED": "REJECT_BIN",
+    "REJECT_BIN_INSERTED": "REJECT_BIN",
+    "SAFE_DOOR_OPENED": "VAULT",
+    "SAFE_DOOR_CLOSED": "VAULT",
+    "OPERATOR_DOOR_OPENED": "OPERADOR",
+    "OPERATOR_DOOR_CLOSED": "OPERADOR",
+    "CASH_DISPENSER_ERROR": "ERROR_DISPENSADOR",
+}
+
+# Movimientos de efectivo que solo deberían ocurrir en modo supervisor
+EVENTOS_REQUIEREN_SUPERVISOR = {
+    "CASH_ADDED", "CASH_COUNTS_CLEARED",
+    "TOP_CASSETTE_REMOVED", "TOP_CASSETTE_INSERTED",
+    "SECOND_CASSETTE_REMOVED", "SECOND_CASSETTE_INSERTED",
+    "THIRD_CASSETTE_REMOVED", "THIRD_CASSETTE_INSERTED",
+    "FOURTH_CASSETTE_REMOVED", "FOURTH_CASSETTE_INSERTED",
+    "REJECT_BIN_REMOVED", "REJECT_BIN_INSERTED",
+}
+
+CATEGORIAS_NCR = {
+    "CRITICO": [
+        "OUT_OF_SERVICE", "OFFLINE", "ONLINE", "CASH_DISPENSER_ERROR",
+        "SAFE_DOOR_OPENED", "SAFE_DOOR_CLOSED",
+        "OPERATOR_DOOR_OPENED", "OPERATOR_DOOR_CLOSED",
+        "NOTES_RETRACTED", "NOTES_NO_TOMADAS",
+        "EFECTIVO_FUERA_SUPERVISOR", "CASSETTE_CONFIG_CHANGE",
+        "DESCUADRE_CONTADORES", "RETIRO_SIN_EFECTIVO",
+        "DIF_MONTO_NOTAS", "EMV_AAC_CON_APROBACION",
+    ],
+    "SUPERVISOR": [
+        "SUPERVISOR_MODE_ENTRY", "SUPERVISOR_MODE_EXIT", "PASSWORD_CHANGED",
+        "SUPERVISOR_TASK_ENTERED", "SUPERVISOR_TASK_EXITED",
+    ],
+    "EFECTIVO": [
+        "CASH_ADDED", "CASH_COUNTS_CLEARED",
+        "TOP_CASSETTE_REMOVED", "TOP_CASSETTE_INSERTED",
+        "SECOND_CASSETTE_REMOVED", "SECOND_CASSETTE_INSERTED",
+        "THIRD_CASSETTE_REMOVED", "THIRD_CASSETTE_INSERTED",
+        "FOURTH_CASSETTE_REMOVED", "FOURTH_CASSETTE_INSERTED",
+        "REJECT_BIN_REMOVED", "REJECT_BIN_INSERTED",
+        "SUPERVISOR_CASH_REPORT", "CASSETTE_INFO", "CASSETTE_STATUS_ALERTA",
+    ],
+    "ADMIN": ["ATM_ADMIN"],
+    "CLIENTE": ["CUSTOMER_CANCELLED", "TIMEOUT", "CARD_EJECT_TIMEOUT"],
+    "CANAL": ["CARDLESS_TRANSACTION"],
+    "NEGOCIO": ["TRX_NO_EXITOSA"],
+    "TRAZABILIDAD": ["TRANSACTION_START", "TRANSACTION_END"],
+}
+
+# Última configuración de caseteras vista por ATM (entre archivos)
+ULTIMA_CONFIG_CASETES = {}
+
+
+# ---------------------------------------------------------------------
+# 4. HELPERS
+# ---------------------------------------------------------------------
+def hora_de(linea: str):
+    m = RE_HORA.search(linea)
+    return m.group(1) if m else None
+
+
+def limpiar(texto):
+    """Quita los códigos de control de impresión NCR."""
+    return RE_CTRL_NCR.sub("", texto).strip()
+
+
+def fecha_mdy_a_dmy(fecha):
+    """06/23/2026 o 06/23/26 (MM/DD) -> 23/06/26 (mismo formato que las trx)."""
+    try:
+        mm, dd, yy = fecha.split("/")
+        return f"{int(dd):02d}/{int(mm):02d}/{yy[-2:]}"
+    except Exception:
+        return fecha
+
+
+def a_num(txt):
+    txt = (txt or "").replace(",", "").strip()
+    return int(txt) if txt.isdigit() else 0
+
+
+def minutos_entre(h1, h2):
+    try:
+        t1 = datetime.strptime(h1, "%H:%M:%S" if len(h1) == 8 else "%H:%M")
+        t2 = datetime.strptime(h2, "%H:%M:%S" if len(h2) == 8 else "%H:%M")
+        return int((t2 - t1).total_seconds() // 60)
+    except Exception:
+        return None
+
+
+def denom_atm(atmid):
+    return DENOM_NCR_POR_ATM.get(atmid, DENOM_NCR_DEFAULT)
+
+
+def fmt4(valores):
+    return "/".join(str(valores[k]) if k in valores else "-" for k in range(1, 5))
+
+
+def obtener_atmid(lineas):
+    for linea in lineas:
+        if "ATMID" in linea.upper():
+            try:
+                valor = linea.split(":", 1)[1].strip()
+                return valor.split("-")[0].strip()
+            except Exception:
+                pass
+    for linea in lineas:
+        m = RE_ATM_ANY.search(linea)
+        if m:
+            return m.group(1).upper()
+    return None
+
+
+def primera_fecha(lineas):
+    for linea in lineas:
+        m = RE_EVENTO_NCR.search(linea)
+        if m:
+            return fecha_mdy_a_dmy(m.group(2))
+    return None
+
+
+def nueva_trx():
+    t = {c: None for c in TRX_COLUMNS}
+    t.update({
+
+        "Dispensed_T1": 0,
+        "Dispensed_T2": 0,
+        "Dispensed_T3": 0,
+        "Dispensed_T4": 0,
+
+        # None (no 0) cuando la trx no imprime contadores: así el
+        # Delta_Remaining del puerto 3 no se distorsiona con consultas.
+        "Remaining_T1": None,
+        "Remaining_T2": None,
+        "Remaining_T3": None,
+        "Remaining_T4": None,
+
+        "CashPresented": "NO",
+        "CashTaken": "NO",
+        "Movimiento_Efectivo": "NO",
+
+        "Origen_TRX": "NORMAL",
+        "Monto_Retiro": 0.0,
+        "Monto_Comision": 0.0
+    })
+    return t
+
+
+def clasificar_evento_ncr(u):
+
+    # "CASSETTE INFORMATION WAS NOT DISPLAYED" no es un evento
+    if "WAS NOT DISPLAYED" in u:
+        return None
+
+    # Encabezado del reporte ATM_ADMIN:  DIA  HORA  CAJERO
+    if "CAJERO" in u and "HORA" in u and "DIA" in u:
+        return "ATM_ADMIN"
+
+    for texto, evento in EVENTOS_CLAVE_NCR.items():
+
+        if texto in u:
+            return evento
+
+    return None
+
+
+def categoria_evento_ncr(evento):
+
+    for categoria, lista in CATEGORIAS_NCR.items():
+        if evento in lista:
+            return categoria
+
+    return "OTRO"
+
+
+# ---------------------------------------------------------------------
+# 4.1 LECTORES DE BLOQUES (supervisor / efectivo)
+# ---------------------------------------------------------------------
+def leer_tipos(lineas, desde, hasta):
+    """Lee pares 'TYPE n = valor' hasta el siguiente encabezado *nnn*."""
+    valores = {}
+    for z in range(desde, min(hasta, len(lineas))):
+        if z > desde and RE_EVENTO_NCR.search(lineas[z]):
+            break
+        for tipo, valor in RE_TYPE_VALOR.findall(lineas[z]):
+            valores.setdefault(int(tipo), int(valor))
+    return valores
+
+
+def detalle_cash_added(lineas, n, atmid):
+    tipos = leer_tipos(lineas, n + 1, n + 4)
+    if not tipos:
+        return "RECARGA_EFECTIVO"
+    denom = denom_atm(atmid)
+    monto = sum(cant * denom.get(t, 0) for t, cant in tipos.items())
+    return "|".join(f"T{t}={tipos[t]}" for t in sorted(tipos)) + f" | MONTO_CALC={monto:.2f}"
+
+
+def detalle_counts_cleared(lineas, n):
+    secciones = {"DISP": {}, "REM": {}, "REJ": {}}
+    actual = None
+    for z in range(n + 1, min(n + 15, len(lineas))):
+        if RE_EVENTO_NCR.search(lineas[z]):
+            break
+        t = lineas[z].upper()
+        if "CASH DISPENSED" in t:
+            actual = "DISP"
+        elif "CASH REMAINING" in t:
+            actual = "REM"
+        elif "CASH REJECTED" in t:
+            actual = "REJ"
+        if actual:
+            for tipo, valor in RE_TYPE_VALOR.findall(lineas[z]):
+                secciones[actual].setdefault(int(tipo), int(valor))
+    return "ARQUEO_CAJA | " + " | ".join(f"{k}={fmt4(v)}" for k, v in secciones.items())
+
+
+def detalle_reporte_supervisor(lineas, n):
+    """Reporte MACHINE NO: CASSETTE + REJECTED = REMAINING; REMAINING + DISPENSED = TOTAL."""
+    filas = {}
+    fecha = hora = last_cleared = cards = activity = None
+
+    for z in range(n, min(n + 30, len(lineas))):
+        txt = limpiar(lineas[z])
+
+        m = RE_DATETIME_REP.search(txt)
+        if m and fecha is None:
+            fecha, hora = fecha_mdy_a_dmy(m.group(1)), m.group(2)
+
+        m = RE_FILA_REPORTE.match(txt)
+        if m:
+            filas.setdefault(m.group(1).upper(), []).extend([int(m.group(2)), int(m.group(3))])
+
+        m = RE_LAST_CLEARED.search(txt)
+        if m and last_cleared is None:
+            last_cleared = m.group(1)
+
+        m = RE_CARDS_CAPT.search(txt)
+        if m:
+            cards = int(m.group(1))
+
+        m = RE_ACTIVITY.search(txt)
+        if m:
+            activity = m.group(1)
+            break
+
+    def fila(k):
+        v = filas.get(k, [])
+        return "/".join(map(str, v)) if v else "-"
+
+    cuadre = "SIN_DATOS"
+    claves = ["CASSETTE", "REJECTED", "REMAINING", "DISPENSED", "TOTAL"]
+    if all(len(filas.get(k, [])) == 4 for k in claves):
+        ok = all(
+            filas["CASSETTE"][x] + filas["REJECTED"][x] == filas["REMAINING"][x]
+            and filas["REMAINING"][x] + filas["DISPENSED"][x] == filas["TOTAL"][x]
+            for x in range(4)
+        )
+        cuadre = "OK" if ok else "ERROR"
+
+    detalle = (
+        f"CAS={fila('CASSETTE')} | REJ={fila('REJECTED')} | REM={fila('REMAINING')} | "
+        f"DISP={fila('DISPENSED')} | TOT={fila('TOTAL')} | CUADRE={cuadre} | "
+        f"LAST_CLEARED={last_cleared} | CARDS_CAPTURED={cards} | ACTIVITY={activity}"
+    )
+    return detalle, cuadre, fecha, hora
+
+
+def detalle_tarea_supervisor(lineas, n):
+    """Lee TASKNAME / RESULT / USERID / fecha-hora del bloque anterior."""
+    campos, fecha, hora = {}, None, None
+
+    for z in range(n - 1, max(-1, n - 15), -1):
+        txt = limpiar(lineas[z])
+
+        if "-----" in txt:
+            break
+
+        m = RE_FECHA_TAREA.search(txt)
+        if m and fecha is None:
+            mm, dd, yyyy, hh, mi, ss, ampm = m.groups()
+            hh = int(hh) % 12 + (12 if ampm.upper() == "PM" else 0)
+            fecha = f"{int(dd):02d}/{int(mm):02d}/{yyyy[-2:]}"
+            hora = f"{hh:02d}:{mi}:{ss}"
+            continue
+
+        if ":" in txt:
+            clave, valor = txt.split(":", 1)
+            clave = clave.strip().upper()
+            if clave in ("TERMINALID", "USERTYPE", "USERID", "TASKNAME", "RESULT"):
+                campos.setdefault(clave, valor.strip())
+
+        if RE_EVENTO_NCR.search(lineas[z]):
+            break
+
+    detalle = (
+        f"TASK={campos.get('TASKNAME') or 'SIN_DATO'} | "
+        f"RESULT={campos.get('RESULT') or 'N/A'} | "
+        f"USER={campos.get('USERID') or 'SIN_USUARIO'} | "
+        f"USERTYPE={campos.get('USERTYPE') or 'SIN_DATO'}"
+    )
+    return detalle, fecha, hora
+
+
+def leer_cassette_info(lineas, n):
+    filas = []
+    for z in range(n + 1, min(n + 8, len(lineas))):
+        if RE_EVENTO_NCR.search(lineas[z]):
+            break
+        m = RE_CASETE_INFO.match(limpiar(lineas[z]))
+        if m:
+            filas.append(tuple(x.upper() for x in m.groups()))
+    return filas
+
+
+def fmt_config(config):
+    return ",".join(f"{pos}:V{val}:T{tipo}" for pos, val, tipo in config)
+
+
+def detalle_atm_admin(lineas, n):
+    """Reporte C1..C4: STR + INC - DEC - OUT = END."""
+    fecha = hora = None
+    cas, actual = {}, None
+
+    for z in range(n + 1, min(n + 18, len(lineas))):
+        txt = lineas[z]
+        if "TRANSACTION END" in txt.upper():
+            break
+
+        m = RE_ADMIN_FECHA.search(txt)
+        if m and fecha is None:
+            fecha, hora = m.group(1), m.group(2)
+
+        m = RE_ADMIN_STR.search(txt)
+        if m:
+            actual = int(m.group(1))
+            cas[actual] = {"STR": a_num(m.group(2))}
+            continue
+
+        if actual:
+            m = RE_ADMIN_INC.search(txt)
+            if m:
+                cas[actual]["INC"], cas[actual]["DEC"] = a_num(m.group(1)), a_num(m.group(2))
+            m = RE_ADMIN_OUT.search(txt)
+            if m:
+                cas[actual]["OUT"], cas[actual]["END"] = a_num(m.group(1)), a_num(m.group(2))
+
+    cuadre = "SIN_DATOS"
+    completos = [d for d in cas.values() if all(k in d for k in ("STR", "INC", "DEC", "OUT", "END"))]
+    if completos:
+        ok = all(d["STR"] + d["INC"] - d["DEC"] - d["OUT"] == d["END"] for d in completos)
+        cuadre = "OK" if ok else "ERROR"
+
+    partes = [
+        f"C{c}:STR={d.get('STR')},INC={d.get('INC')},DEC={d.get('DEC')},"
+        f"OUT={d.get('OUT')},END={d.get('END')}"
+        for c, d in sorted(cas.items())
+    ]
+    detalle = " | ".join(partes + [f"CUADRE={cuadre}"])
+    return detalle, cuadre, fecha, hora
+
+
+def hora_inicio_ncr(lineas, i, ventana=80):
+    """Hora del TRANSACTION START de esta trx (y su índice)."""
+    for k in range(i - 1, max(-1, i - ventana), -1):
+        u = lineas[k].upper()
+        if "TRANSACTION START" in u:
+            for z in range(k, i):
+                h = hora_de(lineas[z])
+                if h:
+                    return h, k
+            for z in range(k, max(-1, k - 3), -1):
+                m = RE_EVENTO_NCR.search(lineas[z])
+                if m:
+                    return m.group(3), k
+            return None, k
+        if "TRANSACTION END" in u or "FIN TRX" in u:
+            break
+
+    for c in reversed(lineas[max(0, i - 25):i]):
+        h = hora_de(c)
+        if h:
+            return h, None
+    return None, None
+
+
+# ---------------------------------------------------------------------
+# 5. PROCESAR UN ARCHIVO
+# ---------------------------------------------------------------------
+def procesar_ncr(archivo):
+    nombre = Path(archivo).name
+
+    with open(archivo, "r", encoding="latin1", errors="ignore") as f:
+        lineas = f.readlines()
+
+    atmid_archivo = obtener_atmid(lineas)
+
+    eventos, transacciones, incidentes, cash_status = [], [], [], []
+
+    def agregar_evento(ev, detalle, fecha, hora, n, texto):
+        eventos.append({
+            # Línea al final: hace el ID único aunque se repita el minuto
+            "ID_EVENTO": f"{fecha}_{hora}_{atmid_archivo}_{ev}_{n + 1}",
+            "Fecha": fecha,
+            "Hora": hora,
+            "ATMID": atmid_archivo,
+            "Evento": ev,
+            "Evento_Detalle": detalle,
+            "Categoria": categoria_evento_ncr(ev),
+            "Detalle": limpiar(texto),
+            "Linea": n + 1,
+            "ArchivoOrigen": nombre,
+        })
+
+    # ---- 5.1 EVENTOS NCR -----------------------------------------
+
+    fecha_actual = primera_fecha(lineas)
+    ultima_hora = None
+
+    en_supervisor = False
+    hora_entrada_sup = None
+    billetes_presentados = None     # (hora, n, linea) sin NOTES TAKEN todavía
+    ultimo_reporte = None           # evita duplicar reportes reimpresos
+
+    for n, linea in enumerate(lineas):
+
+        u = linea.upper()
+
+        m_hdr = RE_EVENTO_NCR.search(linea)
+
+        if m_hdr:
+            fecha_actual = fecha_mdy_a_dmy(m_hdr.group(2))
+            ultima_hora = m_hdr.group(3)
+
+        # Hora con segundos si la línea la trae; si no, la del encabezado
+        h = hora_de(linea) or ultima_hora
+
+        # --- control de billetes presentados / tomados ---
+        if "TRANSACTION START" in u:
+            billetes_presentados = None
+
+        if "NOTES PRESENTED" in u:
+            billetes_presentados = (h, n, linea)
+        elif "NOTES TAKEN" in u:
+            billetes_presentados = None
+
+        ev = clasificar_evento_ncr(u)
+
+        evento_detalle = "NO_APLICA"
+        fecha_ev, hora_ev = fecha_actual, h
+        extras = []     # eventos derivados: (evento, detalle)
+
+        if ev == "CASH_ADDED":
+            evento_detalle = detalle_cash_added(lineas, n, atmid_archivo)
+
+        elif ev in DETALLE_FIJO:
+            evento_detalle = DETALLE_FIJO[ev]
+
+        elif ev == "CASH_COUNTS_CLEARED":
+            evento_detalle = detalle_counts_cleared(lineas, n)
+
+        elif ev == "SUPERVISOR_MODE_ENTRY":
+            evento_detalle = "INICIO_SESION"
+            en_supervisor = True
+            hora_entrada_sup = h
+
+        elif ev == "SUPERVISOR_MODE_EXIT":
+            dur = minutos_entre(hora_entrada_sup, h) if hora_entrada_sup else None
+            evento_detalle = f"FIN_SESION | DURACION_MIN={dur if dur is not None else 'SIN_ENTRADA'}"
+            en_supervisor = False
+            hora_entrada_sup = None
+
+        elif ev in ("SUPERVISOR_TASK_ENTERED", "SUPERVISOR_TASK_EXITED"):
+            evento_detalle, f_t, h_t = detalle_tarea_supervisor(lineas, n)
+            if f_t:
+                fecha_ev, hora_ev = f_t, h_t
+
+        elif ev == "SUPERVISOR_CASH_REPORT":
+            evento_detalle, cuadre, f_r, h_r = detalle_reporte_supervisor(lineas, n)
+            if f_r:
+                fecha_ev, hora_ev = f_r, h_r
+
+            clave = (fecha_ev, hora_ev, evento_detalle)
+            if clave == ultimo_reporte:
+                ev = None           # reimpresión del mismo reporte
+            else:
+                ultimo_reporte = clave
+                if cuadre == "ERROR":
+                    extras.append(("DESCUADRE_CONTADORES", evento_detalle))
+
+        elif ev == "CASSETTE_INFO":
+            filas = leer_cassette_info(lineas, n)
+            if not filas:
+                ev = None
+            else:
+                evento_detalle = " | ".join(
+                    f"{pos}:{cur} {val}:T{tipo}:{estado}"
+                    for pos, cur, val, tipo, estado in filas
+                )
+
+                config = tuple((pos, val, tipo) for pos, cur, val, tipo, estado in filas)
+                previa = ULTIMA_CONFIG_CASETES.get(atmid_archivo)
+                if previa and previa != config:
+                    extras.append((
+                        "CASSETTE_CONFIG_CHANGE",
+                        f"ANTES={fmt_config(previa)} | AHORA={fmt_config(config)}"
+                    ))
+                ULTIMA_CONFIG_CASETES[atmid_archivo] = config
+
+                no_ok = [f"{pos}={estado}" for pos, cur, val, tipo, estado in filas if estado != "OK"]
+                if no_ok:
+                    extras.append(("CASSETTE_STATUS_ALERTA", " | ".join(no_ok)))
+
+        elif ev == "ATM_ADMIN":
+            evento_detalle, cuadre, f_a, h_a = detalle_atm_admin(lineas, n)
+            if f_a:
+                fecha_ev, hora_ev = f_a, h_a
+            if cuadre == "ERROR":
+                extras.append(("DESCUADRE_CONTADORES", evento_detalle))
+
+        if ev:
+            agregar_evento(ev, evento_detalle, fecha_ev, hora_ev, n, linea)
+
+            if ev in EVENTOS_REQUIEREN_SUPERVISOR and not en_supervisor:
+                extras.append(("EFECTIVO_FUERA_SUPERVISOR", f"EVENTO={ev}"))
+
+        for ev_extra, det_extra in extras:
+            agregar_evento(ev_extra, det_extra, fecha_ev, hora_ev, n, linea)
+
+        # --- trazabilidad ---
+        if "TRANSACTION START" in u:
+
+            agregar_evento("TRANSACTION_START", "NO_APLICA", fecha_actual, h, n, linea)
+
+        elif "TRANSACTION END" in u:
+
+            if billetes_presentados:
+                h_p, n_p, l_p = billetes_presentados
+                m_p = RE_NOTES_PRESENTED.search(l_p)
+                notas = ",".join(m_p.groups()) if m_p else "SIN_DATO"
+                agregar_evento(
+                    "NOTES_NO_TOMADAS",
+                    f"NOTAS={notas} | HORA_PRESENTADO={h_p}",
+                    fecha_actual, h, n, linea
+                )
+                billetes_presentados = None
+
+            agregar_evento("TRANSACTION_END", "NO_APLICA", fecha_actual, h, n, linea)
+
+    # ---- 5.2 TRANSACCIONES -------------------------------------------
+    i = 0
+    while i < len(lineas):
+        if "INICIO TRX" not in lineas[i].upper():
+            i += 1
+            continue
+
+        trx = nueva_trx()
+        trx["ArchivoOrigen"] = nombre
+
+        # --- hora inicio (TRANSACTION START de esta trx) ---
+        trx["Hora_Inicio"], idx_start = hora_inicio_ncr(lineas, i)
+
+        # --- criptograma EMV final (TC = aprobada por chip, AAC = rechazada) ---
+        genac2 = None
+        desde = idx_start if idx_start is not None else max(0, i - 25)
+        for c in lineas[desde:i]:
+            m = RE_GENAC2.search(c)
+            if m:
+                genac2 = m.group(1).upper()
+
+        # --- bloque de la trx: de INICIO TRX a FIN TRX ---
+        j = i
+        while j < len(lineas):
+            l = lineas[j].strip()
+
+            if l.startswith("TRACE"):
+                trx["Trace"] = l.split(":", 1)[1].strip()
+            elif l.startswith("SEQ"):
+                trx["Seq"] = l.split(":", 1)[1].strip()
+            elif l.startswith("DATE"):
+                m = RE_DATE.search(l)
+                if m:
+                    trx["Fecha"] = m.group(1)
+                    trx["Hora_TRX"] = m.group(2)
+            elif l.startswith("TRXID"):
+                trx["Tipo_TRX"] = l.split(":", 1)[1].strip()
+            elif l.startswith("ATMID"):
+                valor = l.split(":", 1)[1].strip()
+                trx["ATMID"] = valor.split("-")[0].strip() if "-" in valor else valor
+            elif l.startswith("CARD"):
+                trx["Tarjeta"] = l.split(":", 1)[1].strip()
+            elif l.startswith("ACCOUNT"):
+                trx["Cuenta"] = l.split(":", 1)[1].strip()
+            elif l.startswith("AMOUNT"):
+                trx["Monto"] = (
+                    l.split(":", 1)[1]
+                    .replace("L", "")
+                    .replace("$", "")
+                    .replace(",", "")
+                    .strip()
+                )
+            elif l.startswith("AUTHID"):
+                trx["AuthID"] = l.split(":", 1)[1].strip()
+            elif l.startswith("RESP"):
+                resp = l.split(":", 1)[1].strip()
+                partes = resp.split("-", 1)
+                trx["RespCode"] = partes[0].strip()
+                if len(partes) > 1:
+                    trx["RespDesc"] = partes[1].strip()
+                trx["Alerta"] = ALERTA_POR_RESP.get(trx["RespCode"], "OTROS")
+            elif "FIN TRX" in l.upper():
+                break
+
+            j += 1
+
+        # --- hora fin ---
+        for z in range(j, min(j + 50, len(lineas))):
+            m = RE_TRX_END.search(lineas[z])
+            if m:
+                trx["Hora_Fin"] = m.group(1)
+                break
+
+        # --- CASH NCR (desde FIN TRX hasta TRANSACTION END de esta trx) ---
+        # Dispensed = billetes de ESTA trx (NOTES PRESENTED a,b,c,d).
+        # La fila DISPENSED de "CASH TOTAL" es acumulada desde el último
+        # arqueo, por eso ya no se usa para la transacción.
+        for k in range(j, min(j + 40, len(lineas))):
+
+            linea_cash = lineas[k].strip()
+            u_cash = linea_cash.upper()
+
+            if k > j and "INICIO TRX" in u_cash:
+                break
+
+            m = RE_NOTES_PRESENTED.search(linea_cash)
+
+            if m:
+
+                trx["Dispensed_T1"] = int(m.group(1))
+                trx["Dispensed_T2"] = int(m.group(2))
+                trx["Dispensed_T3"] = int(m.group(3))
+                trx["Dispensed_T4"] = int(m.group(4))
+
+                trx["CashPresented"] = "SI"
+                trx["Movimiento_Efectivo"] = "SI"
+
+            if "NOTES TAKEN" in u_cash:
+                trx["CashTaken"] = "SI"
+
+            m = RE_REMAINING_NCR.match(linea_cash)
+
+            if m:
+
+                trx["Remaining_T1"] = int(m.group(1))
+                trx["Remaining_T2"] = int(m.group(2))
+                trx["Remaining_T3"] = int(m.group(3))
+                trx["Remaining_T4"] = int(m.group(4))
+
+            if "TRANSACTION END" in u_cash:
+                break
+
+        # --- alerta operativa ---
+        ctx = "\n".join(lineas[i:min(j + 15, len(lineas))]).upper()
+        for clave, etiqueta in ALERTA_OPERATIVA:
+            if clave in ctx:
+                trx["Alerta_Operativa"] = etiqueta
+                break
+
+        # --- incidente de negocio ---
+        tipo_inc = INCIDENTE_POR_RESP.get(trx["RespCode"])
+        if tipo_inc:
+            incidentes.append({
+                "Fecha": trx["Fecha"], "Hora": trx["Hora_TRX"],
+                "Trace": trx["Trace"], "Seq": trx["Seq"],
+                "ATMID": trx["ATMID"], "Tipo": tipo_inc,
+                "ArchivoOrigen": nombre,
+            })
+
+        # --- cash status (uno por transacción) ---
+        cash_status.append({
+            "Hora_Inicio": trx["Hora_Inicio"], "Hora_TRX": trx["Hora_TRX"],
+            "Hora_Fin": trx["Hora_Fin"], "Alerta": trx["Alerta"],
+            "Alerta_Operativa": trx["Alerta_Operativa"], "Fecha": trx["Fecha"],
+            "Hora": trx["Hora_TRX"], "Trace": trx["Trace"], "Seq": trx["Seq"],
+            "ATMID": trx["ATMID"],
+            "Dispensed_T1": trx["Dispensed_T1"], "Dispensed_T2": trx["Dispensed_T2"],
+            "Dispensed_T3": trx["Dispensed_T3"], "Dispensed_T4": trx["Dispensed_T4"],
+            "Remaining_T1": trx["Remaining_T1"], "Remaining_T2": trx["Remaining_T2"],
+            "Remaining_T3": trx["Remaining_T3"], "Remaining_T4": trx["Remaining_T4"],
+            "ArchivoOrigen": nombre,
+        })
+
+        # ---------------------------------------------------------
+        # CLASIFICACION DE NEGOCIO NCR
+        # ---------------------------------------------------------
+
+        tipo_trx = str(
+            trx.get("Tipo_TRX", "")
+        ).upper()
+
+        monto = pd.to_numeric(
+            trx.get("Monto"),
+            errors="coerce"
+        )
+
+        # VALORES POR DEFECTO
+        if pd.notna(monto):
+
+            trx["Monto_Retiro"] = monto
+            trx["Monto_Comision"] = 0.00
+
+        # ANTICIPO
+        if tipo_trx == "ANTICIPO":
+
+            trx["Origen_TRX"] = "ANTICIPO"
+
+        # CONSULTA
+        elif tipo_trx == "CONSULTA":
+
+            trx["Origen_TRX"] = "CONSULTA"
+
+        # RETIRO CUPON
+        elif tipo_trx == "RET.CUPON":
+
+            trx["Origen_TRX"] = "RET_CUPON"
+
+        # RETIROS
+        elif tipo_trx in ["RETIRO", "*WITHDRAWL"]:
+
+            trx["Origen_TRX"] = "NORMAL"
+
+            if pd.notna(monto):
+
+                # COMISION HNL: 1171.50 -> 1000 | 3171.50 -> 3000
+                retiro_hnl = round(
+                    monto - 171.50,
+                    2
+                )
+
+                if (
+                    retiro_hnl > 0
+                    and retiro_hnl % 100 == 0
+                ):
+
+                    trx["Monto_Retiro"] = retiro_hnl
+
+                    trx["Monto_Comision"] = 171.50
+
+                    trx["Origen_TRX"] = "COMISION_HNL"
+
+                else:
+
+                    # COMISION USD: 207 -> 200 | 407 -> 400
+                    retiro_usd = round(
+                        monto - 7.00,
+                        2
+                    )
+
+                    if (
+                        retiro_usd > 0
+                        and retiro_usd % 100 == 0
+                        and monto % 100 != 0
+                    ):
+
+                        trx["Monto_Retiro"] = retiro_usd
+
+                        trx["Monto_Comision"] = 7.00
+
+                        trx["Origen_TRX"] = "COMISION_USD"
+
+                    else:
+
+                        trx["Origen_TRX"] = "NORMAL"
+
+        # ---------------------------------------------------------
+        # NUEVO: CONTROLES DE AUDITORIA  -> eventos en el puerto 2
+        # ---------------------------------------------------------
+        resp_ok  = trx["RespCode"] in CODIGOS_OK
+        con_cash = tipo_trx in TIPOS_CON_EFECTIVO
+        f_ev, h_ev = trx["Fecha"], trx["Hora_TRX"]
+        ref = f"TRACE={trx['Trace']} SEQ={trx['Seq']}"
+
+        # Transacción rechazada por el host (incluye 072 NO_SE_PUEDE_PROCESAR)
+        if trx["RespCode"] and not resp_ok:
+            agregar_evento(
+                "TRX_NO_EXITOSA",
+                f"RESP={trx['RespCode']}-{trx['RespDesc'] or ''} | "
+                f"ALERTA={trx['Alerta']} | TIPO={tipo_trx} | SEQ={trx['Seq']}",
+                f_ev, h_ev, i, ref
+            )
+
+        if resp_ok and con_cash:
+
+            # Aprobada y con monto, pero el ATM no presentó billetes
+            if trx["Movimiento_Efectivo"] == "NO" and pd.notna(monto) and monto > 0:
+                agregar_evento(
+                    "RETIRO_SIN_EFECTIVO",
+                    f"MONTO={monto:.2f} | TIPO={tipo_trx} | SEQ={trx['Seq']}",
+                    f_ev, h_ev, i, ref
+                )
+
+            # Billetes dispensados x denominación vs monto del retiro
+            if trx["Movimiento_Efectivo"] == "SI" and trx["Origen_TRX"] != "COMISION_USD":
+                denom = denom_atm(trx["ATMID"])
+                calc = sum(trx[f"Dispensed_T{t}"] * denom.get(t, 0) for t in range(1, 5))
+                if abs(calc - float(trx["Monto_Retiro"] or 0)) > 0.01:
+                    notas = ",".join(str(trx[c]) for c in DISP_COLS)
+                    agregar_evento(
+                        "DIF_MONTO_NOTAS",
+                        f"MONTO={float(trx['Monto_Retiro'] or 0):.2f} | CALC_NOTAS={calc:.2f} | "
+                        f"NOTAS={notas} | SEQ={trx['Seq']}",
+                        f_ev, h_ev, i, ref
+                    )
+
+            # Host aprobó, pero el chip devolvió AAC (rechazo) en el GENAC 2
+            if genac2 == "AAC":
+                agregar_evento(
+                    "EMV_AAC_CON_APROBACION",
+                    f"GENAC2=AAC | RESP={trx['RespCode']} | SEQ={trx['Seq']}",
+                    f_ev, h_ev, i, ref
+                )
+
+        if trx["ATMID"]:
+            transacciones.append(trx)
+
+        i = j + 1
+
+    return transacciones, eventos, incidentes, cash_status
+
+
+# ---------------------------------------------------------------------
+# 6. RECORRER TODOS LOS ARCHIVOS
+# ---------------------------------------------------------------------
+trx_global, eventos_global, incidentes_global, cash_global = [], [], [], []
+
+archivos = sorted(CARPETA_LOGS.glob("*.txt"))
+print(f"Archivos .txt encontrados: {len(archivos)}")
+
+for archivo in archivos:
+    trx, ev, inc, cash = procesar_ncr(archivo)
+    trx_global.extend(trx)
+    eventos_global.extend(ev)
+    incidentes_global.extend(inc)
+    cash_global.extend(cash)
+    print(f"{archivo.name} | TRX={len(trx)} EV={len(ev)} INC={len(inc)} CASH={len(cash)}")
+
+# ---------------------------------------------------------------------
+# 7. DATAFRAME BASE + LIMPIEZA
+# ---------------------------------------------------------------------
+df_trx   = pd.DataFrame(trx_global,     columns=TRX_COLUMNS)
+df_event = pd.DataFrame(eventos_global, columns=EVENT_COLUMNS)
+
+# Monto a numérico (los "Monto != 0" dependen de esto)
+df_trx["Monto"] = pd.to_numeric(df_trx["Monto"], errors="coerce")
+
+# ID único + dedup (evita contar la misma trx dos veces)
+df_trx["ID_UNICO"] = (
+    df_trx["ATMID"].fillna("").astype(str) + "_" +
+    df_trx["Fecha"].fillna("").astype(str) + "_" +
+    df_trx["Seq"].fillna("").astype(str) + "_" +
+    df_trx["Trace"].fillna("").astype(str)
+)
+df_trx = df_trx.drop_duplicates(subset=["ID_UNICO"]).reset_index(drop=True)
+
+# Eventos: un ID por evento (incluye la línea) -> quitar solo repetidos exactos
+df_event = df_event.drop_duplicates(subset=["ID_EVENTO", "ArchivoOrigen"]).reset_index(drop=True)
+
+# ---------------------------------------------------------------------
+# 8. TABLA 0 y 1 -> SEPARAR POR RESULTADO
+# ---------------------------------------------------------------------
+es_ok        = df_trx["RespCode"].isin(CODIGOS_OK)
+monto_valido = df_trx["Monto"].notna()
+# & (df_trx["Monto"] != 0)
+
+# 0) Débitos exitosos: aprobado (000/001) Y con monto real
+df_debitos_ok = df_trx[es_ok & monto_valido].reset_index(drop=True)
+
+# 1) Transacciones identificadas pero NO aprobadas (distintas de 000/001)
+df_trx_otras = df_trx[~es_ok].reset_index(drop=True)
+
+# ---------------------------------------------------------------------
+# 9. TABLA 3 -> CONTROL DE CASH POR TRANSACCIÓN
+# ---------------------------------------------------------------------
+df_cash = pd.DataFrame(cash_global, columns=CASH_COLUMNS)
+df_cash["Orden"] = range(len(df_cash))   # orden cronológico de captura
+
+# Totales por transacción
+df_cash["Total_Dispensado"] = df_cash[DISP_COLS].sum(axis=1)
+df_cash["Total_Remaining"]  = df_cash[REM_COLS].sum(axis=1, min_count=1)
+
+# Ordenar por cajero y secuencia de captura
+df_cash = df_cash.sort_values(["ATMID", "Orden"]).reset_index(drop=True)
+
+# Cuánto bajó respecto a la transacción anterior del MISMO cajero
+df_cash["Remaining_Anterior"] = df_cash.groupby("ATMID")["Total_Remaining"].shift(1)
+df_cash["Delta_Remaining"]    = df_cash["Total_Remaining"] - df_cash["Remaining_Anterior"]
+
+# ---------------------------------------------------------------------
+# 9.1 RESUMEN DE EVENTOS (solo consola, para validar)
+# ---------------------------------------------------------------------
+if not df_event.empty:
+    print("Eventos por categoría:")
+    print(df_event["Categoria"].value_counts().to_string())
+
+    criticos = df_event[df_event["Categoria"] == "CRITICO"]["Evento"].value_counts()
+    if not criticos.empty:
+        print("Eventos CRITICOS:")
+        print(criticos.to_string())
+
+print("=" * 60)
+print(f"Debitos_OK={len(df_debitos_ok)} | Otras={len(df_trx_otras)} | "
+      f"Eventos={len(df_event)} | CashControl={len(df_cash)}")
+print("=" * 60)
+
+# ---------------------------------------------------------------------
+# 10. SALIDA A KNIME  (configurar el nodo con 4 puertos de salida)
+# ---------------------------------------------------------------------
+knio.output_tables[0] = knio.Table.from_pandas(df_debitos_ok)  # Débitos exitosos
+knio.output_tables[1] = knio.Table.from_pandas(df_trx_otras)   # No exitosas
+knio.output_tables[2] = knio.Table.from_pandas(df_event)       # Eventos
+knio.output_tables[3] = knio.Table.from_pandas(df_cash)        # Control de cash
