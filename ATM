@@ -1,0 +1,347 @@
+/* =============================================================================
+   MONITOREO OPERATIVO ATM · PÁGINA DE EVENTOS
+   Medidas DAX + modelo + pre-cálculo en Oracle
+   Mario Escoto · Auditoría Continua
+   ============================================================================= */
+
+
+/* #############################################################################
+   PARTE 0 · MODELO RECOMENDADO
+   #############################################################################
+
+   HECHOS
+     F_EVENTOS_ATM      (grano: 1 fila = 1 evento del log)
+         ID_EVENTO, FECHA_EVENTO, HORA_EVENTO, FECHA_HORA, ATMID,
+         EVENTO, EVENTO_DETALLE, CATEGORIA, DETALLE, LINEA,
+         ARCHIVO_ORIGEN, TIPO_ATM, FECHA_CARGA
+         + columnas calculadas en origen (ver PARTE 4):
+           EVENTO_NORM, ES_TIMEOUT, ES_RETRACT, TIENE_RETRACT,
+           SEG_HASTA_RETRACT, ES_OUT_SERVICE, ES_IN_SERVICE,
+           ES_SERVICEMODE_IN, ES_SERVICEMODE_OUT, ES_CONTADOR,
+           MIN_FUERA_SERVICIO
+
+     F_CONCILIACION_ATM (la del cruce journal↔switch, grano ATMID+FECHA)
+
+   DIMENSIONES
+     D_ATM         ATMID, CIUDAD, AGENCIA, TIPO_ATM, LAT, LON, ESTADO
+     D_CALENDARIO  FECHA  (marcada como tabla de fecha)
+     D_HORA        HORA (0-23), FRANJA ('Madrugada','Mañana','Tarde','Noche')
+     D_EVENTO      EVENTO_NORM, CATEGORIA, SEVERIDAD (1-5), DESCRIPCION_NEGOCIO
+
+   RELACIONES
+     D_CALENDARIO[FECHA]  1--* F_EVENTOS_ATM[FECHA_EVENTO]
+     D_ATM[ATMID]         1--* F_EVENTOS_ATM[ATMID]
+     D_HORA[HORA]         1--* F_EVENTOS_ATM[HORA]
+     D_EVENTO[EVENTO_NORM]1--* F_EVENTOS_ATM[EVENTO_NORM]
+     D_ATM[ATMID]         1--* F_CONCILIACION_ATM[ATMID]
+     D_CALENDARIO[FECHA]  1--* F_CONCILIACION_ATM[FECHA_ATM]
+
+   OJO: D_ATM y D_CALENDARIO compartidas entre los dos hechos es lo que te
+   permite cruzar "eventos del ATM" contra "descuadre del ATM" en la misma
+   página. Es la ganancia grande del modelo.
+   ############################################################################# */
+
+
+
+/* #############################################################################
+   PARTE 1 · MEDIDAS BASE (tabla MEDIDAS EVENTOS)
+   ############################################################################# */
+
+Eventos Totales =
+COUNTROWS ( F_EVENTOS_ATM )
+
+Eventos Críticos =
+CALCULATE (
+    [Eventos Totales],
+    F_EVENTOS_ATM[CATEGORIA] = "CRITICO"
+)
+
+ATM con Eventos =
+DISTINCTCOUNT ( F_EVENTOS_ATM[ATMID] )
+
+ATM Monitoreados =
+DISTINCTCOUNT ( D_ATM[ATMID] )
+
+% ATM con Eventos Críticos =
+DIVIDE (
+    CALCULATE ( DISTINCTCOUNT ( F_EVENTOS_ATM[ATMID] ), F_EVENTOS_ATM[CATEGORIA] = "CRITICO" ),
+    [ATM Monitoreados]
+)
+
+
+/* #############################################################################
+   PARTE 2 · EFECTIVO NO ENTREGADO  (el bloque de mayor valor para auditoría)
+   ############################################################################# */
+
+/* Cliente no tomó el efectivo que el ATM ya presentó */
+Timeouts de Presentación =
+CALCULATE ( [Eventos Totales], F_EVENTOS_ATM[ES_TIMEOUT] = 1 )
+
+/* El ATM recuperó el efectivo hacia el cassette de rechazo */
+Retracts =
+CALCULATE ( [Eventos Totales], F_EVENTOS_ATM[ES_RETRACT] = 1 )
+
+/* >>> EL KPI ESTRELLA <<<
+   Efectivo presentado que nunca se registró como recuperado.
+   Es el único escenario donde el dinero queda sin trazabilidad. */
+Timeouts sin Retract =
+CALCULATE (
+    [Eventos Totales],
+    F_EVENTOS_ATM[ES_TIMEOUT] = 1,
+    F_EVENTOS_ATM[TIENE_RETRACT] = 0
+)
+
+% Retract Completado =
+DIVIDE ( [Retracts], [Timeouts de Presentación] )
+
+Seg Promedio hasta Retract =
+CALCULATE (
+    AVERAGE ( F_EVENTOS_ATM[SEG_HASTA_RETRACT] ),
+    F_EVENTOS_ATM[ES_TIMEOUT] = 1,
+    F_EVENTOS_ATM[TIENE_RETRACT] = 1
+)
+
+/* Un retract tarde (>60s) sugiere que alguien más estuvo frente al ATM */
+Retracts Tardíos =
+CALCULATE (
+    [Eventos Totales],
+    F_EVENTOS_ATM[ES_TIMEOUT] = 1,
+    F_EVENTOS_ATM[SEG_HASTA_RETRACT] > 60
+)
+
+/* Monto expuesto estimado: usa el ticket promedio del ATM ese día,
+   tomado del hecho de conciliación */
+Ticket Promedio ATM =
+DIVIDE (
+    SUM ( F_CONCILIACION_ATM[MONTO_SWITCH] ),
+    SUM ( F_CONCILIACION_ATM[TRX_SWITCH] )
+)
+
+Monto Expuesto Estimado =
+SUMX (
+    SUMMARIZE ( F_EVENTOS_ATM, D_ATM[ATMID], D_CALENDARIO[FECHA] ),
+    [Timeouts sin Retract] * [Ticket Promedio ATM]
+)
+
+
+/* #############################################################################
+   PARTE 3 · DISPONIBILIDAD Y ACCESOS FÍSICOS
+   ############################################################################# */
+
+Salidas de Servicio =
+CALCULATE ( [Eventos Totales], F_EVENTOS_ATM[ES_OUT_SERVICE] = 1 )
+
+Entradas a Servicio =
+CALCULATE ( [Eventos Totales], F_EVENTOS_ATM[ES_IN_SERVICE] = 1 )
+
+/* Un IN sin su OUT previo = reinicio no controlado del equipo */
+Entradas sin Salida =
+VAR _in  = [Entradas a Servicio]
+VAR _out = [Salidas de Servicio]
+RETURN MAX ( _in - _out, 0 )
+
+Minutos Fuera de Servicio =
+CALCULATE (
+    SUM ( F_EVENTOS_ATM[MIN_FUERA_SERVICIO] ),
+    F_EVENTOS_ATM[ES_IN_SERVICE] = 1
+)
+
+Minutos Período =
+VAR _dias = DISTINCTCOUNT ( D_CALENDARIO[FECHA] )
+VAR _atms = [ATM Monitoreados]
+RETURN _dias * _atms * 1440
+
+% Disponibilidad =
+DIVIDE ( [Minutos Período] - [Minutos Fuera de Servicio], [Minutos Período] )
+
+Accesos Modo Servicio =
+CALCULATE ( [Eventos Totales], F_EVENTOS_ATM[ES_SERVICEMODE_IN] = 1 )
+
+Lecturas de Contadores =
+CALCULATE ( [Eventos Totales], F_EVENTOS_ATM[ES_CONTADOR] = 1 )
+
+/* CONTROL CLAVE: toda apertura debe tener BEFORE + AFTER SOP.
+   Una apertura sin contadores es acceso al efectivo sin evidencia. */
+Accesos sin Contadores =
+VAR _accesos = [Accesos Modo Servicio]
+VAR _pares   = DIVIDE ( [Lecturas de Contadores], 2 )
+RETURN MAX ( _accesos - _pares, 0 )
+
+% Accesos con Evidencia =
+DIVIDE ( [Accesos Modo Servicio] - [Accesos sin Contadores], [Accesos Modo Servicio] )
+
+
+/* #############################################################################
+   PARTE 4 · ÍNDICE DE RIESGO OPERATIVO Y SEMÁFOROS
+   ############################################################################# */
+
+/* Ponderación: lo que no tiene trazabilidad pesa más que lo que sí la tiene */
+Índice Riesgo ATM =
+VAR _sinRetract  = [Timeouts sin Retract]      * 5
+VAR _retracts    = [Retracts]                  * 3
+VAR _sinContador = [Accesos sin Contadores]    * 4
+VAR _fueraServ   = [Salidas de Servicio]       * 2
+VAR _tardios     = [Retracts Tardíos]          * 3
+RETURN _sinRetract + _retracts + _sinContador + _fueraServ + _tardios
+
+Nivel de Riesgo =
+VAR _i = [Índice Riesgo ATM]
+RETURN
+SWITCH ( TRUE (),
+    _i >= 22, "🔴 Alto",
+    _i >= 7,  "🟡 Medio",
+    _i > 0,   "🟢 Bajo",
+    "⚪ Sin eventos"
+)
+
+Color Riesgo =
+VAR _i = [Índice Riesgo ATM]
+RETURN
+SWITCH ( TRUE (),
+    _i >= 22, "#D32F2F",
+    _i >= 7,  "#F5A623",
+    _i > 0,   "#2E9E5B",
+    "#9CA3AF"
+)
+/* Uso: Formato condicional -> Color de fondo -> Formato por campo -> Color Riesgo */
+
+Ranking Riesgo =
+IF (
+    NOT ISBLANK ( [Índice Riesgo ATM] ),
+    RANKX ( ALLSELECTED ( D_ATM[ATMID] ), [Índice Riesgo ATM],, DESC, DENSE )
+)
+
+Top 3 ATM en Riesgo =
+CALCULATE (
+    DISTINCTCOUNT ( D_ATM[ATMID] ),
+    FILTER ( VALUES ( D_ATM[ATMID] ), [Nivel de Riesgo] = "🔴 Alto" )
+)
+
+
+/* #############################################################################
+   PARTE 5 · CRUCE EVENTOS ↔ CONCILIACIÓN (lo que nadie más está viendo)
+   ############################################################################# */
+
+/* ATM que ese día descuadró Y además tuvo eventos de efectivo no entregado.
+   Ese cruce es el hallazgo: la diferencia del cuadre tiene explicación física. */
+ATM con Descuadre y Eventos =
+CALCULATE (
+    DISTINCTCOUNT ( D_ATM[ATMID] ),
+    FILTER (
+        VALUES ( D_ATM[ATMID] ),
+        [Timeouts de Presentación] > 0
+            && CALCULATE ( SUM ( F_CONCILIACION_ATM[DIF_MONTO] ) ) <> 0
+    )
+)
+
+Diferencia Explicada por Eventos =
+VAR _dif = CALCULATE ( SUM ( F_CONCILIACION_ATM[DIF_MONTO] ) )
+VAR _ev  = [Timeouts de Presentación] + [Retracts]
+RETURN
+SWITCH ( TRUE (),
+    _dif = 0,                 "Sin diferencia",
+    _dif <> 0 && _ev > 0,     "⚠️ Diferencia con eventos de efectivo asociados",
+    _dif <> 0 && _ev = 0,     "🔴 Diferencia sin explicación operativa",
+    "Revisar"
+)
+
+/* Narrativa automática para el tooltip o la tarjeta de detalle */
+Resumen ATM =
+VAR _atm  = SELECTEDVALUE ( D_ATM[ATMID] )
+VAR _to   = [Timeouts de Presentación]
+VAR _sr   = [Timeouts sin Retract]
+VAR _ac   = [Accesos sin Contadores]
+VAR _os   = [Salidas de Servicio]
+RETURN
+    _atm & ": " &
+    _to & " presentaciones no tomadas, " &
+    _sr & " sin retract registrado, " &
+    _ac & " aperturas sin lectura de contadores y " &
+    _os & " salidas de servicio."
+
+
+/* #############################################################################
+   PARTE 6 · PRE-CÁLCULO EN ORACLE  (las columnas que las medidas necesitan)
+   Correr esto en el DB Query Reader que alimenta F_EVENTOS_ATM.
+   El pareo timeout→retract se hace aquí, NO en DAX: es mucho más barato.
+   ############################################################################# */
+/*
+WITH BASE AS (
+    SELECT  E.*,
+            TRIM(E.ATMID)                                   AS ATMID_N,
+            /* normaliza los dos dialectos: Diebold y NCR */
+            CASE
+              WHEN UPPER(E.EVENTO_DETALLE) LIKE '%CASH_PRESENT_TIMEOUT%'    THEN 'CASH_PRESENT_TIMEOUT'
+              WHEN UPPER(E.EVENTO_DETALLE) LIKE '%FORGOTTEN_CASH_REMOVED%'  THEN 'FORGOTTEN_CASH_REMOVED'
+              WHEN UPPER(E.DETALLE) LIKE '%GO OUT OF SERVICE%'
+                OR UPPER(E.EVENTO)  LIKE '%OUT_OF_SE%'                      THEN 'OUT_OF_SERVICE'
+              WHEN UPPER(E.DETALLE) LIKE '%GO IN SERVICE%'
+                OR UPPER(E.EVENTO)  LIKE '%IN_SERVICE%'                     THEN 'IN_SERVICE'
+              WHEN UPPER(E.DETALLE) LIKE '%SERVICEMODE ENTERED%'            THEN 'SERVICEMODE_IN'
+              WHEN UPPER(E.DETALLE) LIKE '%SERVICEMODE LEFT%'               THEN 'SERVICEMODE_OUT'
+              WHEN UPPER(E.DETALLE) LIKE '%CASH COUNTERS BEFORE%'           THEN 'COUNTERS_BEFORE'
+              WHEN UPPER(E.DETALLE) LIKE '%CASH COUNTERS AFTER%'            THEN 'COUNTERS_AFTER'
+              ELSE 'OTRO'
+            END                                             AS EVENTO_NORM,
+            E.FECHA_EVENTO + (TO_NUMBER(SUBSTR(E.HORA_EVENTO,1,2))/24)
+                           + (TO_NUMBER(SUBSTR(E.HORA_EVENTO,4,2))/1440)
+                           + (TO_NUMBER(SUBSTR(E.HORA_EVENTO,7,2))/86400)   AS FECHA_HORA
+    FROM    AC_HN_AS_A_P3_ME_51_ATM_EVENTOS E
+),
+FLAGS AS (
+    SELECT  B.*,
+            CASE WHEN EVENTO_NORM='CASH_PRESENT_TIMEOUT'   THEN 1 ELSE 0 END AS ES_TIMEOUT,
+            CASE WHEN EVENTO_NORM='FORGOTTEN_CASH_REMOVED' THEN 1 ELSE 0 END AS ES_RETRACT,
+            CASE WHEN EVENTO_NORM='OUT_OF_SERVICE'         THEN 1 ELSE 0 END AS ES_OUT_SERVICE,
+            CASE WHEN EVENTO_NORM='IN_SERVICE'             THEN 1 ELSE 0 END AS ES_IN_SERVICE,
+            CASE WHEN EVENTO_NORM='SERVICEMODE_IN'         THEN 1 ELSE 0 END AS ES_SERVICEMODE_IN,
+            CASE WHEN EVENTO_NORM='SERVICEMODE_OUT'        THEN 1 ELSE 0 END AS ES_SERVICEMODE_OUT,
+            CASE WHEN EVENTO_NORM IN ('COUNTERS_BEFORE','COUNTERS_AFTER') THEN 1 ELSE 0 END AS ES_CONTADOR,
+            /* siguiente retract del mismo ATM después de este evento */
+            CASE WHEN EVENTO_NORM='CASH_PRESENT_TIMEOUT' THEN
+              MIN(CASE WHEN EVENTO_NORM='FORGOTTEN_CASH_REMOVED' THEN FECHA_HORA END)
+                OVER (PARTITION BY ATMID_N
+                      ORDER BY FECHA_HORA
+                      ROWS BETWEEN 1 FOLLOWING AND 3 FOLLOWING)
+            END                                            AS FH_RETRACT,
+            /* minutos fuera de servicio: este IN menos el OUT anterior */
+            CASE WHEN EVENTO_NORM='IN_SERVICE' THEN
+              ROUND( ( FECHA_HORA -
+                LAST_VALUE(CASE WHEN EVENTO_NORM='OUT_OF_SERVICE' THEN FECHA_HORA END IGNORE NULLS)
+                  OVER (PARTITION BY ATMID_N ORDER BY FECHA_HORA
+                        ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING)
+              ) * 1440, 2)
+            END                                            AS MIN_FUERA_SERVICIO
+    FROM    BASE B
+)
+SELECT  F.*,
+        CASE WHEN FH_RETRACT IS NOT NULL THEN 1 ELSE 0 END          AS TIENE_RETRACT,
+        ROUND((FH_RETRACT - FECHA_HORA) * 86400)                    AS SEG_HASTA_RETRACT
+FROM    FLAGS F;
+*/
+
+
+/* #############################################################################
+   PARTE 7 · DISEÑO DE LA PÁGINA (orden de lectura)
+   #############################################################################
+
+   FILA 1 · Tarjetas KPI (6)
+       Timeouts sin Retract  |  Retracts  |  Top 3 ATM en Riesgo
+       Accesos sin Contadores |  % Disponibilidad |  Eventos Críticos
+
+   FILA 2 · izquierda  -> Gráfico de barras: Índice Riesgo ATM por ATMID
+                          (color por campo = Color Riesgo)
+            derecha    -> Matriz calor: ATMID (filas) x HORA (columnas),
+                          valor = Eventos Críticos
+
+   FILA 3 · izquierda  -> Tabla de pares: ATMID, hora timeout, hora retract,
+                          Seg hasta Retract, Nivel de Riesgo
+            derecha    -> Gráfico de líneas: Timeouts de Presentación por hora
+
+   FILA 4 · Tabla de accesos físicos: ATMID, entrada, salida, duración,
+            contadores, % Accesos con Evidencia
+
+   TOOLTIP · usar la medida Resumen ATM en una página de tooltip
+
+   SEGMENTADORES · Fecha, ATM, Tipo ATM, Categoría, Nivel de Riesgo
+   ############################################################################# */
