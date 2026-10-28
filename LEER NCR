@@ -1,0 +1,823 @@
+# =====================================================================
+# PARSER DIEBOLD EJ  ->  NODO "PYTHON SCRIPT" DE KNIME
+# Salidas (4 puertos):
+#   0 -> Débitos EXITOSOS      (RespCode 000/001 y Monto != 0)
+#   1 -> Trx NO exitosas       (RespCode distinto de 000 y 001)
+#   2 -> Eventos del ATM
+#   3 -> Control de CASH        (cómo va bajando por transacción)
+# =====================================================================
+
+import re
+import pandas as pd
+import knime.scripting.io as knio
+from pathlib import Path
+
+# ---------------------------------------------------------------------
+# 1. ENTRADA  (flow variable de KNIME)
+# ---------------------------------------------------------------------
+CARPETA_LOGS = Path(knio.flow_variables["RutaATMNCR"])
+
+# ---------------------------------------------------------------------
+# 2. REGEX PRE-COMPILADOS
+# ---------------------------------------------------------------------
+RE_HORA      = re.compile(r"(\d{2}:\d{2}:\d{2})")
+RE_TRX_START = re.compile(r"(\d{2}:\d{2}:\d{2}).*TRANSACTION START", re.I)
+RE_TRX_END   = re.compile(r"(\d{2}:\d{2}:\d{2}).*TRANSACTION END", re.I)
+RE_DATE      = re.compile(r"(\d{2}/\d{2}/\d{2})\s+(\d{2}:\d{2})")
+RE_DISPENSED = re.compile(
+    r"DISPENSED\s+(\d+)\s*(\d+)\s*(\d+)\s*(\d+)",
+    re.I
+)
+
+RE_REMAINING_NCR = re.compile(
+    r"REMAINING\s+(\d+)\s*(\d+)\s*(\d+)\s*(\d+)",
+    re.I
+)
+
+
+# ---------------------------------------------------------------------
+# 3. CATÁLOGOS
+# ---------------------------------------------------------------------
+ALERTA_POR_RESP = {
+    "000": "EXITOSA",
+    "001": "EXITOSA",
+    "058": "FONDOS_INSUFICIENTES",
+    "060": "EXCEDE_LIMITE_USO",
+    "063": "LIMITE_RETIROS_EXCEDIDO",
+    "072": "NO_SE_PUEDE_PROCESAR",
+    "056": "CUENTA_INVALIDA",
+}
+
+INCIDENTE_POR_RESP = {
+    "058": "FONDOS_INSUFICIENTES",
+    "060": "EXCEDE_LIMITE_USO",
+    "063": "LIMITE_RETIROS_EXCEDIDO",
+    "072": "NO_SE_PUEDE_PROCESAR",
+    "056": "TRANS_CUENTA_INVALIDA",
+}
+
+ALERTA_OPERATIVA = [
+
+    ("TIMEOUT FROM TIMEOUT STATE", "TIMEOUT"),
+
+    ("CUSTOMER CANCELLED", "CUSTOMER_CANCELLED"),
+
+    ("NOTES TAKEN", "NOTES_TAKEN"),
+
+    ("SST OUT OF SERVICE", "OUT_OF_SERVICE"),
+
+    ("SST IN SERVICE", "IN_SERVICE")
+]
+
+TRX_COLUMNS = [
+    "Fecha", "Hora_TRX", "Hora_Inicio", "Hora_Fin", "Trace", "Seq", "Tipo_TRX",
+    "ATMID", "Tarjeta", "Cuenta", "Monto", "AuthID", "RespCode", "RespDesc",
+    "Alerta", "Alerta_Operativa",
+    "Dispensed_T1", "Dispensed_T2", "Dispensed_T3", "Dispensed_T4",
+    "Remaining_T1", "Remaining_T2", "Remaining_T3", "Remaining_T4",
+    "CashPresented", "CashTaken", "Movimiento_Efectivo","Origen_TRX", "Monto_Retiro",
+    "Monto_Comision", "ArchivoOrigen",
+]
+
+
+EVENT_COLUMNS = [
+    "ID_EVENTO",
+    "Fecha",
+    "Hora",
+    "ATMID",
+    "Evento",
+    "Evento_Detalle",
+    "Categoria",
+    "Detalle",
+    "Linea",
+    "ArchivoOrigen"
+]
+
+CASH_COLUMNS = [
+    "Hora_Inicio", "Hora_TRX", "Hora_Fin", "Alerta", "Alerta_Operativa",
+    "Fecha", "Hora", "Trace", "Seq", "ATMID",
+    "Dispensed_T1", "Dispensed_T2", "Dispensed_T3", "Dispensed_T4",
+    "Remaining_T1", "Remaining_T2", "Remaining_T3", "Remaining_T4",
+    "ArchivoOrigen",
+]
+
+DISP_COLS = ["Dispensed_T1", "Dispensed_T2", "Dispensed_T3", "Dispensed_T4"]
+REM_COLS  = ["Remaining_T1", "Remaining_T2", "Remaining_T3", "Remaining_T4"]
+
+
+# ---------------------------------------------------------------------
+# 4. HELPERS
+# ---------------------------------------------------------------------
+def hora_de(linea: str):
+    m = RE_HORA.search(linea)
+    return m.group(1) if m else None
+
+def nueva_trx():
+    t = {c: None for c in TRX_COLUMNS}
+    t.update({
+
+        "Dispensed_T1": 0,
+        "Dispensed_T2": 0,
+        "Dispensed_T3": 0,
+        "Dispensed_T4": 0,
+
+        "Remaining_T1": 0,
+        "Remaining_T2": 0,
+        "Remaining_T3": 0,
+        "Remaining_T4": 0,
+
+        "CashPresented": "NO",
+        "CashTaken": "NO",
+        "Movimiento_Efectivo": "NO",
+
+        "Origen_TRX": "NORMAL",
+        "Monto_Retiro": 0.0,
+        "Monto_Comision": 0.0
+    })
+    return t
+
+EVENTOS_CLAVE_NCR = {
+
+    "SST OUT OF SERVICE": "OUT_OF_SERVICE",
+
+    "SST IN SERVICE": "IN_SERVICE",
+
+    "SST ON-LINE": "ONLINE",
+
+    "SST OFF-LINE": "OFFLINE",
+
+    "SUPERVISOR MODE ENTRY": "SUPERVISOR_MODE_ENTRY",
+
+    "SUPERVISOR MODE EXIT": "SUPERVISOR_MODE_EXIT",
+
+    "SERVICEMODE ENTERED": "SUPERVISOR_MODE_ENTRY",
+
+    "SERVICEMODE LEFT": "SUPERVISOR_MODE_EXIT",
+
+    "CUSTOMER CANCELLED":
+        "CUSTOMER_CANCELLED",
+
+    "TIMEOUT FROM TIMEOUT STATE":
+        "TIMEOUT",
+
+    "CANCEL FROM TIMEOUT STATE":
+        "TIMEOUT",
+
+    "CARD EJECT TIMER EXPIRED":
+        "CARD_EJECT_TIMEOUT",
+
+    "CASH ADDED":
+        "CASH_ADDED",
+
+    "TOP CASSETTE REMOVED":
+        "TOP_CASSETTE_REMOVED",
+
+    "TOP CASSETTE INSERTED":
+        "TOP_CASSETTE_INSERTED",
+
+    "SECOND CASSETTE REMOVED":
+        "SECOND_CASSETTE_REMOVED",
+
+    "SECOND CASSETTE INSERTED":
+        "SECOND_CASSETTE_INSERTED",
+
+    "REJECT BIN REMOVED":
+        "REJECT_BIN_REMOVED",
+
+    "REJECT BIN INSERTED":
+        "REJECT_BIN_INSERTED",
+
+    "SAFE DOOR OPENED":
+        "SAFE_DOOR_OPENED",
+
+    "SAFE DOOR CLOSED":
+        "SAFE_DOOR_CLOSED",
+
+    "OPERATOR DOOR OPENED":
+        "OPERATOR_DOOR_OPENED",
+
+    "OPERATOR DOOR CLOSED":
+        "OPERATOR_DOOR_CLOSED",
+
+    "CASH COUNTS CLEARED":
+        "CASH_COUNTS_CLEARED",
+
+    "CASH DISPENSER ERROR IGNORED":
+        "CASH_DISPENSER_ERROR",
+
+    "PASSWORD CHANGED":
+        "PASSWORD_CHANGED"
+
+}
+
+
+def clasificar_evento_ncr(u):
+
+    for texto, evento in EVENTOS_CLAVE_NCR.items():
+
+        if texto in u:
+            return evento
+
+    return None
+
+def categoria_evento_ncr(evento):
+
+    if evento in [
+        "OUT_OF_SERVICE",
+        "OFFLINE",
+        "ONLINE",
+        "CASH_DISPENSER_ERROR"
+    ]:
+        return "CRITICO"
+
+    if evento in [
+        "SUPERVISOR_MODE_ENTRY",
+        "SUPERVISOR_MODE_EXIT",
+        "PASSWORD_CHANGED"
+    ]:
+        return "SUPERVISOR"
+
+    if evento in [
+        "CASH_ADDED",
+        "TOP_CASSETTE_REMOVED",
+        "TOP_CASSETTE_INSERTED",
+        "SECOND_CASSETTE_REMOVED",
+        "SECOND_CASSETTE_INSERTED",
+        "REJECT_BIN_REMOVED",
+        "REJECT_BIN_INSERTED",
+        "CASH_COUNTS_CLEARED"
+    ]:
+        return "EFECTIVO"
+
+    if evento in [
+        "CUSTOMER_CANCELLED",
+        "TIMEOUT",
+        "CARD_EJECT_TIMEOUT"
+    ]:
+        return "CLIENTE"
+
+    if evento in [
+        "TRANSACTION_START",
+        "TRANSACTION_END"
+    ]:
+        return "TRAZABILIDAD"
+
+    return "OTRO"
+# ---------------------------------------------------------------------
+# 5. PROCESAR UN ARCHIVO
+# ---------------------------------------------------------------------
+def procesar_ncr(archivo):
+    nombre = Path(archivo).name
+
+    with open(archivo, "r", encoding="latin1", errors="ignore") as f:
+        lineas = f.readlines()
+
+    atmid_archivo = None
+
+    for linea in lineas:
+
+        if "ATMID" in linea.upper():
+
+            try:
+
+                valor = linea.split(":", 1)[1].strip()
+
+                atmid_archivo = valor.split("-")[0].strip()
+
+                break
+
+            except:
+                pass
+
+    eventos, transacciones, incidentes, cash_status = [], [], [], []
+
+    # ---- 5.1 EVENTOS NCR -----------------------------------------
+
+    fecha_actual = None
+    ultima_hora = None
+
+    for n, linea in enumerate(lineas):
+
+        u = linea.upper()
+
+        h = hora_de(linea)
+
+        RE_EVENTO_NCR = re.compile(
+            r"\*(\d+)\*(\d{2}/\d{2}/\d{4})\*(\d{2}:\d{2})\*"
+        )
+        m_fecha = RE_EVENTO_NCR.search(linea)
+
+        if m_fecha:
+
+            fecha_actual = m_fecha.group(2)
+
+            ultima_hora = m_fecha.group(3)
+
+        # Si la línea actual no tiene hora,
+        # usar la última encontrada
+        if h is None:
+            h = ultima_hora
+
+        ev = clasificar_evento_ncr(u)
+
+        evento_detalle = "NO_APLICA"
+
+        if ev == "CASH_ADDED":
+            evento_detalle = "RECARGA_EFECTIVO"
+            for z in range(
+                n,
+                min(n + 10, len(lineas))
+            ):
+
+                txt = lineas[z]
+
+                m = re.search(
+                    r'TYPE 1\s*=\s*(\d+).*TYPE 2\s*=\s*(\d+)',
+                    txt,
+                    re.I
+                )
+
+                if m:
+
+                    evento_detalle = (
+                        f"T1={m.group(1)}|"
+                        f"T2={m.group(2)}"
+                    )
+
+                    break
+
+        elif ev == "TOP_CASSETTE_REMOVED":
+            evento_detalle = "CASSETTE_TOP"
+
+        elif ev == "TOP_CASSETTE_INSERTED":
+            evento_detalle = "CASSETTE_TOP"
+
+        elif ev == "SECOND_CASSETTE_REMOVED":
+            evento_detalle = "CASSETTE_SECOND"
+
+        elif ev == "SECOND_CASSETTE_INSERTED":
+            evento_detalle = "CASSETTE_SECOND"
+
+        elif ev == "REJECT_BIN_REMOVED":
+            evento_detalle = "REJECT_BIN"
+
+        elif ev == "REJECT_BIN_INSERTED":
+            evento_detalle = "REJECT_BIN"
+
+        elif ev == "SAFE_DOOR_OPENED":
+            evento_detalle = "VAULT"
+
+        elif ev == "SAFE_DOOR_CLOSED":
+            evento_detalle = "VAULT"
+
+        elif ev == "OPERATOR_DOOR_OPENED":
+            evento_detalle = "OPERADOR"
+
+        elif ev == "OPERATOR_DOOR_CLOSED":
+            evento_detalle = "OPERADOR"
+
+        elif ev == "SUPERVISOR_MODE_ENTRY":
+            evento_detalle = "INICIO_SESION"
+
+        elif ev == "SUPERVISOR_MODE_EXIT":
+            evento_detalle = "FIN_SESION"
+
+        elif ev == "CASH_COUNTS_CLEARED":
+            evento_detalle = "ARQUEO_CAJA"
+
+        elif ev == "CASH_DISPENSER_ERROR":
+            evento_detalle = "ERROR_DISPENSADOR"
+
+        if ev:
+
+            eventos.append({
+
+                "ID_EVENTO":
+                    (
+                        f"{fecha_actual}_"
+                        f"{ultima_hora}_"
+                        f"{atmid_archivo}_"
+                        f"{ev}"
+                    ),
+
+                "Fecha": fecha_actual,
+
+                "Hora": ultima_hora,
+
+                "ATMID": atmid_archivo,
+
+                "Evento": ev,
+
+                "Evento_Detalle": evento_detalle,
+
+                "Categoria":
+                    categoria_evento_ncr(ev),
+
+                "Detalle": linea.strip(),
+
+                "Linea": n + 1,
+
+                "ArchivoOrigen": nombre
+
+            })
+
+
+        if "TRANSACTION START" in u:
+
+            eventos.append({
+
+                "ID_EVENTO":
+                    (
+                        f"{fecha_actual}_"
+                        f"{ultima_hora}_"
+                        f"{atmid_archivo}_"
+                        f"TRANSACTION_START"
+                    ),
+
+                "Fecha": fecha_actual,
+
+                "Hora": ultima_hora,
+
+                "ATMID": atmid_archivo,
+
+                "Evento": "TRANSACTION_START",
+
+                "Evento_Detalle": "NO_APLICA",
+
+                "Categoria": "TRAZABILIDAD",
+
+                "Detalle": linea.strip(),
+
+                "Linea": n + 1,
+
+                "ArchivoOrigen": nombre
+
+            })
+
+        elif "TRANSACTION END" in u:
+
+            eventos.append({
+
+                "ID_EVENTO":
+                    (
+                        f"{fecha_actual}_"
+                        f"{ultima_hora}_"
+                        f"{atmid_archivo}_"
+                        f"TRANSACTION_END"
+                    ),
+
+                "Fecha": fecha_actual,
+
+                "Hora": ultima_hora,
+
+                "ATMID": atmid_archivo,
+
+                "Evento": "TRANSACTION_END",
+
+                "Evento_Detalle": "NO_APLICA",
+
+                "Categoria": "TRAZABILIDAD",
+
+                "Detalle": linea.strip(),
+
+                "Linea": n + 1,
+
+                "ArchivoOrigen": nombre
+
+            })
+
+    # ---- 5.2 TRANSACCIONES -------------------------------------------
+    i = 0
+    while i < len(lineas):
+        if "INICIO TRX" not in lineas[i].upper():
+            i += 1
+            continue
+
+        trx = nueva_trx()
+        trx["ArchivoOrigen"] = nombre
+
+        # --- contexto previo (80 líneas): hora inicio + cash ---
+        for c in reversed(lineas[max(0, i - 25):i]):
+            hora = hora_de(c)
+            if hora:
+                trx["Hora_Inicio"] = hora
+                break
+
+        # --- bloque de la trx: de INICIO TRX a FIN TRX ---
+        j = i
+        while j < len(lineas):
+            l = lineas[j].strip()
+
+            if l.startswith("TRACE"):
+                trx["Trace"] = l.split(":", 1)[1].strip()
+            elif l.startswith("SEQ"):
+                trx["Seq"] = l.split(":", 1)[1].strip()
+            elif l.startswith("DATE"):
+                m = RE_DATE.search(l)
+                if m:
+                    trx["Fecha"] = m.group(1)
+                    trx["Hora_TRX"] = m.group(2)
+            elif l.startswith("TRXID"):
+                trx["Tipo_TRX"] = l.split(":", 1)[1].strip()
+            elif l.startswith("ATMID"):
+                valor = l.split(":", 1)[1].strip()
+                trx["ATMID"] = valor.split("-")[0].strip() if "-" in valor else valor
+            elif l.startswith("CARD"):
+                trx["Tarjeta"] = l.split(":", 1)[1].strip()
+            elif l.startswith("ACCOUNT"):
+                trx["Cuenta"] = l.split(":", 1)[1].strip()
+            elif l.startswith("AMOUNT"):
+                trx["Monto"] = (
+                    l.split(":", 1)[1]
+                    .replace("L", "")
+                    .replace("$", "")
+                    .replace(",", "")
+                    .strip()
+                )
+            elif l.startswith("AUTHID"):
+                trx["AuthID"] = l.split(":", 1)[1].strip()
+            elif l.startswith("RESP"):
+                resp = l.split(":", 1)[1].strip()
+                partes = resp.split("-", 1)
+                trx["RespCode"] = partes[0].strip()
+                if len(partes) > 1:
+                    trx["RespDesc"] = partes[1].strip()
+                trx["Alerta"] = ALERTA_POR_RESP.get(trx["RespCode"], "OTROS")
+            elif "FIN TRX" in l.upper():
+                break
+
+            j += 1
+
+        # --- hora fin ---
+        for z in range(j, min(j + 50, len(lineas))):
+            m = RE_TRX_END.search(lineas[z])
+            if m:
+                trx["Hora_Fin"] = m.group(1)
+                break
+
+        # --- CASH NCR ---
+
+        for k in range(j, min(j + 40, len(lineas))):
+
+            linea_cash = lineas[k].strip()
+
+            m = RE_DISPENSED.search(linea_cash)
+
+            if m:
+
+                trx["Dispensed_T1"] = int(m.group(1))
+                trx["Dispensed_T2"] = int(m.group(2))
+                trx["Dispensed_T3"] = int(m.group(3))
+                trx["Dispensed_T4"] = int(m.group(4))
+
+                trx["Movimiento_Efectivo"] = "SI"
+
+
+            m = RE_REMAINING_NCR.search(linea_cash)
+
+            if m:
+
+                trx["Remaining_T1"] = int(m.group(1))
+                trx["Remaining_T2"] = int(m.group(2))
+                trx["Remaining_T3"] = int(m.group(3))
+                trx["Remaining_T4"] = int(m.group(4))
+
+            if "NOTES PRESENTED" in linea_cash.upper():
+                trx["CashPresented"] = "SI"
+
+            if "NOTES TAKEN" in linea_cash.upper():
+                trx["CashTaken"] = "SI"    
+
+        # --- alerta operativa ---
+        ctx = "\n".join(lineas[i:min(j + 15, len(lineas))]).upper()
+        for clave, etiqueta in ALERTA_OPERATIVA:
+            if clave in ctx:
+                trx["Alerta_Operativa"] = etiqueta
+                break
+
+        # --- incidente de negocio ---
+        tipo_inc = INCIDENTE_POR_RESP.get(trx["RespCode"])
+        if tipo_inc:
+            incidentes.append({
+                "Fecha": trx["Fecha"], "Hora": trx["Hora_TRX"],
+                "Trace": trx["Trace"], "Seq": trx["Seq"],
+                "ATMID": trx["ATMID"], "Tipo": tipo_inc,
+                "ArchivoOrigen": nombre,
+            })
+
+        # --- cash status (uno por transacción) ---
+        cash_status.append({
+            "Hora_Inicio": trx["Hora_Inicio"], "Hora_TRX": trx["Hora_TRX"],
+            "Hora_Fin": trx["Hora_Fin"], "Alerta": trx["Alerta"],
+            "Alerta_Operativa": trx["Alerta_Operativa"], "Fecha": trx["Fecha"],
+            "Hora": trx["Hora_TRX"], "Trace": trx["Trace"], "Seq": trx["Seq"],
+            "ATMID": trx["ATMID"],
+            "Dispensed_T1": trx["Dispensed_T1"], "Dispensed_T2": trx["Dispensed_T2"],
+            "Dispensed_T3": trx["Dispensed_T3"], "Dispensed_T4": trx["Dispensed_T4"],
+            "Remaining_T1": trx["Remaining_T1"], "Remaining_T2": trx["Remaining_T2"],
+            "Remaining_T3": trx["Remaining_T3"], "Remaining_T4": trx["Remaining_T4"],
+            "ArchivoOrigen": nombre,
+        })
+
+        # ---------------------------------------------------------
+        # AJUSTE AUTOMATICO COMISIONES NCR
+        # ---------------------------------------------------------
+        # ---------------------------------------------------------
+        # CLASIFICACION DE NEGOCIO NCR
+        # ---------------------------------------------------------
+
+        tipo_trx = str(
+            trx.get("Tipo_TRX", "")
+        ).upper()
+
+        monto = pd.to_numeric(
+            trx.get("Monto"),
+            errors="coerce"
+        )
+
+        # -----------------------------------------
+        # VALORES POR DEFECTO
+        # -----------------------------------------
+
+        if pd.notna(monto):
+
+            trx["Monto_Retiro"] = monto
+            trx["Monto_Comision"] = 0.00
+
+        # -----------------------------------------
+        # ANTICIPO
+        # -----------------------------------------
+
+        if tipo_trx == "ANTICIPO":
+
+            trx["Origen_TRX"] = "ANTICIPO"
+
+        # -----------------------------------------
+        # CONSULTA
+        # -----------------------------------------
+
+        elif tipo_trx == "CONSULTA":
+
+            trx["Origen_TRX"] = "CONSULTA"
+
+        # -----------------------------------------
+        # RETIRO CUPON
+        # -----------------------------------------
+
+        elif tipo_trx == "RET.CUPON":
+
+            trx["Origen_TRX"] = "RET_CUPON"
+
+        # -----------------------------------------
+        # RETIROS
+        # -----------------------------------------
+
+        elif tipo_trx in ["RETIRO", "*WITHDRAWL"]:
+
+            trx["Origen_TRX"] = "NORMAL"
+
+            if pd.notna(monto):
+
+                # =====================================
+                # COMISION HNL
+                # Ej:
+                # 1171.50 -> 1000
+                # 3171.50 -> 3000
+                # 5171.50 -> 5000
+                # =====================================
+
+                retiro_hnl = round(
+                    monto - 171.50,
+                    2
+                )
+
+                if (
+                    retiro_hnl > 0
+                    and retiro_hnl % 100 == 0
+                ):
+
+                    trx["Monto_Retiro"] = retiro_hnl
+
+                    trx["Monto_Comision"] = 171.50
+
+                    trx["Origen_TRX"] = "COMISION_HNL"
+
+                else:
+
+                    # =================================
+                    # COMISION USD
+                    # Ej:
+                    # 207 -> 200
+                    # 407 -> 400
+                    # 607 -> 600
+                    # =================================
+
+                    retiro_usd = round(
+                        monto - 7.00,
+                        2
+                    )
+
+                    if (
+                        retiro_usd > 0
+                        and retiro_usd % 100 == 0
+                        and monto % 100 != 0
+                    ):
+
+                        trx["Monto_Retiro"] = retiro_usd
+
+                        trx["Monto_Comision"] = 7.00
+
+                        trx["Origen_TRX"] = "COMISION_USD"
+
+                    else:
+
+                        trx["Origen_TRX"] = "NORMAL"
+    
+        
+        if trx["ATMID"]:
+            transacciones.append(trx)
+
+        i = j + 1
+
+    return transacciones, eventos, incidentes, cash_status
+
+
+# ---------------------------------------------------------------------
+# 6. RECORRER TODOS LOS ARCHIVOS
+# ---------------------------------------------------------------------
+trx_global, eventos_global, incidentes_global, cash_global = [], [], [], []
+
+archivos = sorted(CARPETA_LOGS.glob("*.txt"))
+print(f"Archivos .txt encontrados: {len(archivos)}")
+
+for archivo in archivos:
+    trx, ev, inc, cash = procesar_ncr(archivo)
+    trx_global.extend(trx)
+    eventos_global.extend(ev)
+    incidentes_global.extend(inc)
+    cash_global.extend(cash)
+    print(f"{archivo.name} | TRX={len(trx)} EV={len(ev)} INC={len(inc)} CASH={len(cash)}")
+
+# ---------------------------------------------------------------------
+# 7. DATAFRAME BASE + LIMPIEZA
+# ---------------------------------------------------------------------
+df_trx   = pd.DataFrame(trx_global,     columns=TRX_COLUMNS)
+df_event = pd.DataFrame(eventos_global, columns=EVENT_COLUMNS)
+
+# Monto a numérico (los "Monto != 0" dependen de esto)
+df_trx["Monto"] = pd.to_numeric(df_trx["Monto"], errors="coerce")
+
+# ID único + dedup (evita contar la misma trx dos veces)
+df_trx["ID_UNICO"] = (
+    df_trx["ATMID"].fillna("").astype(str) + "_" +
+    df_trx["Fecha"].fillna("").astype(str) + "_" +
+    df_trx["Seq"].fillna("").astype(str) + "_" +
+    df_trx["Trace"].fillna("").astype(str)
+)
+df_trx = df_trx.drop_duplicates(subset=["ID_UNICO"]).reset_index(drop=True)
+
+# ---------------------------------------------------------------------
+# 8. TABLA 0 y 1 -> SEPARAR POR RESULTADO
+# ---------------------------------------------------------------------
+CODIGOS_OK = ["000", "001"]
+
+es_ok        = df_trx["RespCode"].isin(CODIGOS_OK)
+monto_valido = df_trx["Monto"].notna()
+# & (df_trx["Monto"] != 0)
+
+# 0) Débitos exitosos: aprobado (000/001) Y con monto real
+df_debitos_ok = df_trx[es_ok & monto_valido].reset_index(drop=True)
+
+# 1) Transacciones identificadas pero NO aprobadas (distintas de 000/001)
+df_trx_otras = df_trx[~es_ok].reset_index(drop=True)
+
+# ---------------------------------------------------------------------
+# 9. TABLA 3 -> CONTROL DE CASH POR TRANSACCIÓN
+#    Ordenado por ATM en orden de captura, con totales y cuánto bajó.
+# ---------------------------------------------------------------------
+df_cash = pd.DataFrame(cash_global, columns=CASH_COLUMNS)
+df_cash["Orden"] = range(len(df_cash))   # orden cronológico de captura
+
+# Totales por transacción
+df_cash["Total_Dispensado"] = df_cash[DISP_COLS].sum(axis=1)
+df_cash["Total_Remaining"]  = df_cash[REM_COLS].sum(axis=1, min_count=1)
+
+# Ordenar por cajero y secuencia de captura
+df_cash = df_cash.sort_values(["ATMID", "Orden"]).reset_index(drop=True)
+
+# Cuánto bajó respecto a la transacción anterior del MISMO cajero
+df_cash["Remaining_Anterior"] = df_cash.groupby("ATMID")["Total_Remaining"].shift(1)
+df_cash["Delta_Remaining"]    = df_cash["Total_Remaining"] - df_cash["Remaining_Anterior"]
+
+print("=" * 60)
+print(f"Debitos_OK={len(df_debitos_ok)} | Otras={len(df_trx_otras)} | "
+      f"Eventos={len(df_event)} | CashControl={len(df_cash)}")
+print("=" * 60)
+
+# ---------------------------------------------------------------------
+# 10. SALIDA A KNIME  (configurar el nodo con 4 puertos de salida)
+# ---------------------------------------------------------------------
+knio.output_tables[0] = knio.Table.from_pandas(df_debitos_ok)  # Débitos exitosos
+knio.output_tables[1] = knio.Table.from_pandas(df_trx_otras)   # No exitosas
+knio.output_tables[2] = knio.Table.from_pandas(df_event)       # Eventos
+knio.output_tables[3] = knio.Table.from_pandas(df_cash)        # Control de cash
